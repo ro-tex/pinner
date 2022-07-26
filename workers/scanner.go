@@ -154,7 +154,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// On error, we'll sleep for half an hour and we'll try again.
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to fetch next scan time"))
-			stopped := s.sleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+			stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return
 			}
@@ -164,7 +164,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// for half an hour and we'll check again. It's possible for the
 		// schedule to change in the meantime.
 		if t.UTC().After(time.Now().UTC().Add(conf.SleepBetweenChecksForScan)) {
-			stopped := s.sleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+			stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return
 			}
@@ -193,17 +193,17 @@ func (s *Scanner) threadedScanAndPin() {
 		s.staticLogger.Tracef("End scanning")
 
 		// Schedule the next scan, unless already scheduled:
-		stopped := s.scheduleNextScan()
+		stopped := s.managedScheduleNextScan()
 		if stopped {
 			return
 		}
 	}
 }
 
-// scheduleNextScan attempts to set the time of the next scan until either we
+// managedScheduleNextScan attempts to set the time of the next scan until either we
 // succeed, another server succeeds, or Scanner's TG is stopped. Returns true
 // when Scanner's TG is stopped.
-func (s *Scanner) scheduleNextScan() bool {
+func (s *Scanner) managedScheduleNextScan() bool {
 	// Keep trying to set the time until you succeed or until some other server
 	// succeeds.
 	for {
@@ -211,7 +211,7 @@ func (s *Scanner) scheduleNextScan() bool {
 		t, err := conf.NextScan(context.Background(), s.staticDB, s.staticLogger)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to fetch next scan time"))
-			stopped := s.sleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+			stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return true
 			}
@@ -225,7 +225,7 @@ func (s *Scanner) scheduleNextScan() bool {
 				// Log the error and sleep for half an hour. Meanwhile, another
 				// server will finish its scan and will set the next scan time.
 				s.staticLogger.Debug(errors.AddContext(err, "failed to set next scan time"))
-				stopped := s.sleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+				stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 				if stopped {
 					return true
 				}
@@ -269,7 +269,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		// fail to mark as pinned. Note that this only happens when we want
 		// to continue scanning, otherwise we would have exited right after
 		// managedFindAndPinOneUnderpinnedSkylink.
-		stopped := s.sleepForOrUntilStopped(SleepBetweenPins)
+		stopped := s.managedSleepForOrUntilStopped(SleepBetweenPins)
 		if stopped {
 			return
 		}
@@ -430,10 +430,10 @@ func (s *Scanner) managedWaitUntilHealthy(skylink skymodules.Skylink, sp skymodu
 	}
 }
 
-// sleepForOrUntilStopped is a helper function that blocks for the given
+// managedSleepForOrUntilStopped is a helper function that blocks for the given
 // duration  or until the Scanner's thread group is stopped. Returns true if the
 // TG was  stopped.
-func (s *Scanner) sleepForOrUntilStopped(dur time.Duration) bool {
+func (s *Scanner) managedSleepForOrUntilStopped(dur time.Duration) bool {
 	select {
 	case <-time.After(dur):
 		return false
