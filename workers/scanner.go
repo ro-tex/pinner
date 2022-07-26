@@ -84,7 +84,7 @@ type (
 	// skyd.
 	Scanner struct {
 		staticDB                *database.DB
-		staticLogger            logger.ExtFieldLogger
+		staticLogger            logger.Logger
 		staticServerName        string
 		staticSkydClient        skyd.Client
 		staticSleepBetweenScans time.Duration
@@ -97,7 +97,7 @@ type (
 )
 
 // NewScanner creates a new Scanner instance.
-func NewScanner(db *database.DB, logger logger.ExtFieldLogger, minPinners int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
+func NewScanner(db *database.DB, logger logger.Logger, minPinners int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
 	sleep := sleepBetweenScans
 	if customSleepBetweenScans > 0 {
 		sleep = customSleepBetweenScans

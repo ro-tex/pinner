@@ -38,7 +38,7 @@ type (
 		Ctx             context.Context
 		DB              *database.DB
 		FollowRedirects bool
-		Logger          logger.ExtFieldLogger
+		Logger          logger.Logger
 		ServerName      string
 		SkydClient      skyd.Client
 

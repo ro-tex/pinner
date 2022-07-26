@@ -17,7 +17,7 @@ type (
 	// status is the internal status type that allows thread-safe updates.
 	status struct {
 		mu           sync.Mutex
-		staticLogger logger.ExtFieldLogger
+		staticLogger logger.Logger
 		status       Status
 	}
 )

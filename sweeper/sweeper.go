@@ -20,7 +20,7 @@ type (
 	// and marks them as pinned by the local server.
 	Sweeper struct {
 		staticDB         *database.DB
-		staticLogger     logger.ExtFieldLogger
+		staticLogger     logger.Logger
 		staticSchedule   *schedule
 		staticServerName string
 		staticSkydClient skyd.Client
@@ -29,7 +29,7 @@ type (
 )
 
 // New returns a new Sweeper.
-func New(db *database.DB, skydc skyd.Client, serverName string, logger logger.ExtFieldLogger) *Sweeper {
+func New(db *database.DB, skydc skyd.Client, serverName string, logger logger.Logger) *Sweeper {
 	return &Sweeper{
 		staticDB:         db,
 		staticLogger:     logger,
