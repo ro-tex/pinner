@@ -20,11 +20,6 @@ const (
 	cyclesToWait = 5
 )
 
-var (
-	// maxSleepBetweenScans is the maximum time we might sleep between scans.
-	maxSleepBetweenScans = time.Duration(float64(sleepBetweenScans) * (1 + sleepVariationFactor))
-)
-
 // TestScanner ensures that Scanner does its job.
 func TestScanner(t *testing.T) {
 	if testing.Short() {
@@ -69,7 +64,7 @@ func TestScanner(t *testing.T) {
 		t.Fatal("We didn't expect skyd to be pinning this.")
 	}
 	// Remove the other server, making the file underpinned.
-	err = db.RemoveServerFromSkylink(ctx, sl, otherServer)
+	err = db.RemoveServerFromSkylinks(ctx, []string{sl.String()}, otherServer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +139,7 @@ func TestScannerDryRun(t *testing.T) {
 		t.Fatal("We didn't expect skyd to be pinning this.")
 	}
 	// Remove the other server, making the file underpinned.
-	err = db.RemoveServerFromSkylink(ctx, sl, otherServer)
+	err = db.RemoveServerFromSkylinks(ctx, []string{sl.String()}, otherServer)
 	if err != nil {
 		t.Fatal(err)
 	}
