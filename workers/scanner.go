@@ -27,11 +27,11 @@ import (
 	- pin it locally and add the current server to its list
 	- unlock it
 
- PHASE 2:
+ PHASE 2: <TODO>
  - calculate server load by getting the total number and size of files pinned by each server
  - only pin underpinned files if the current server is in the lowest 20% of servers, otherwise exit before scanning further
 
- PHASE 3:
+ PHASE 3: <TODO>
  - add a second scanner which looks for skylinks which should be unpinned and unpins them from the local skyd.
 */
 

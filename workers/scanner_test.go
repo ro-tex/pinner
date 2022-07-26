@@ -20,11 +20,6 @@ const (
 	cyclesToWait = 5
 )
 
-var (
-	// maxSleepBetweenScans is the maximum time we might sleep between scans.
-	maxSleepBetweenScans = time.Duration(float64(sleepBetweenScans) * (1 + sleepVariationFactor))
-)
-
 // TestScanner ensures that Scanner does its job.
 func TestScanner(t *testing.T) {
 	if testing.Short() {

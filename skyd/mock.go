@@ -107,7 +107,7 @@ func (c *ClientMock) Pin(skylink string) (skymodules.SiaPath, error) {
 func (c *ClientMock) RebuildCache() RebuildCacheResult {
 	closedCh := make(chan struct{})
 	close(closedCh)
-	// Do some work. There are tests which rely on this value to be above 50ms.
+	// Do some work. There are tests which rely on this value being above 50ms.
 	time.Sleep(100 * time.Millisecond)
 	return RebuildCacheResult{
 		errAvail:  closedCh,
@@ -261,4 +261,15 @@ func (c *ClientMock) MockFilesystem() []string {
 	c.SetMapping(dirDsp, rdrt)
 
 	return []string{slR0, slA1, slA2, slC0, slC1, slB0}
+}
+
+// Skylinks returns a list of all skylinks being held by this mock.
+func (c *ClientMock) Skylinks() []string {
+	c.mu.Lock()
+	sls := make([]string, len(c.skylinks), 0)
+	for sl := range c.skylinks {
+		sls = append(sls, sl)
+	}
+	c.mu.Unlock()
+	return sls
 }

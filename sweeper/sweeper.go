@@ -2,7 +2,6 @@ package sweeper
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/skynetlabs/pinner/database"
@@ -17,19 +16,6 @@ const (
 )
 
 type (
-	// Status represents the status of a sweep.
-	Status struct {
-		InProgress bool
-		Error      error
-		StartTime  time.Time
-		EndTime    time.Time
-	}
-	// status is the internal type we use when we want to be able to modify it.
-	status struct {
-		Status
-		mu           sync.Mutex
-		staticLogger logger.ExtFieldLogger
-	}
 	// Sweeper takes care of sweeping the files pinned by the local skyd server
 	// and marks them as pinned by the local server.
 	Sweeper struct {
@@ -56,12 +42,14 @@ func New(db *database.DB, skydc skyd.Client, serverName string, logger logger.Ex
 	}
 }
 
+// Close any running Sweeper thread. Return true if a thread was closed.
+func (s *Sweeper) Close() bool {
+	return s.staticSchedule.Close()
+}
+
 // Status returns a copy of the status of the current sweep.
 func (s *Sweeper) Status() Status {
-	s.staticStatus.mu.Lock()
-	st := s.staticStatus.Status
-	s.staticStatus.mu.Unlock()
-	return st
+	return s.staticStatus.Status()
 }
 
 // Sweep starts a new skyd sweep, unless one is already underway.
@@ -129,33 +117,4 @@ func (s *Sweeper) threadedPerformSweep() {
 		err = errors.AddContext(err, "failed to add server for skylink")
 		return
 	}
-}
-
-// Start marks the start of a new process, unless one is already in progress.
-// If there is a process in progress then Start returns without any action.
-func (st *status) Start() {
-	st.mu.Lock()
-	// Double-check for parallel sweeps.
-	if st.InProgress {
-		st.mu.Unlock()
-		st.staticLogger.Debug("Attempted to start a sweep while another one was already ongoing.")
-		return
-	}
-	// Initialise the status to "a sweep is running".
-	st.InProgress = true
-	st.Error = nil
-	st.StartTime = time.Now().UTC()
-	st.EndTime = time.Time{}
-	st.mu.Unlock()
-	st.staticLogger.Info("Started a sweep.")
-}
-
-// Finalize marks a run as completed with the given error.
-func (st *status) Finalize(err error) {
-	st.mu.Lock()
-	st.InProgress = false
-	st.EndTime = time.Now().UTC()
-	st.Error = err
-	st.mu.Unlock()
-	st.staticLogger.Info("Finalized a sweep.")
 }

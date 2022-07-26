@@ -14,6 +14,18 @@ type (
 	}
 )
 
+// Close cancels any running sweeper thread.Returns true if it closed a running
+// thread and false otherwise.
+func (s *schedule) Close() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if isOpen(s.cancelCh) {
+		close(s.cancelCh)
+		return true
+	}
+	return false
+}
+
 // Update schedules a new series of sweeps to be run, using the given Sweeper.
 // If there are already scheduled sweeps, that schedule is cancelled (running
 // sweeps are not interrupted) and a new schedule is established.
@@ -30,6 +42,7 @@ func (s *schedule) Update(period time.Duration, sweeper *Sweeper) {
 
 	go func() {
 		t := time.NewTicker(s.period)
+		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
