@@ -60,6 +60,28 @@ const (
 	maxPinnersMinValue = 10
 )
 
+var (
+	// ErrTimeTooSoon is returned when we try to set the time of the next scan
+	// too soon, not giving all servers enough time to get the memo.
+	ErrTimeTooSoon = errors.New("time is too soon")
+
+	// DefaultNextScanOffset is the time to next scan we set when we don't have
+	// any value configured in the DB. It should be such a value that it gives
+	// all servers enough time to read the DB and be ready by the time of the
+	//scan.
+	DefaultNextScanOffset = 2 * SleepBetweenChecksForScan
+	// SleepBetweenChecksForScan defines how often we'll check the DB for
+	// the next scheduled scan. Changing this values will affect the values in
+	// conf.NextScan (when there isn't a scan scheduled we want to schedule it
+	// for after 2*SleepBetweenChecksForScan, so all servers have a chance to
+	// check and sync before we kick it off).
+	SleepBetweenChecksForScan = build.Select(build.Var{
+		Standard: 30 * time.Minute,
+		Dev:      30 * time.Second,
+		Testing:  100 * time.Millisecond,
+	}).(time.Duration)
+)
+
 type (
 	// Config represents the entire configurable state of the service. If a
 	// value is not here, then it can't be configured.
@@ -220,7 +242,7 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.ExtFieldLogger
 	if errors.Contains(err, mongo.ErrNoDocuments) {
 		logger.Infof("Missing database value for '%s', setting a new one.", ConfNextScan)
 		// No scan has been scheduled. Schedule one in an hour.
-		err = SetNextScan(ctx, db, time.Now().Add(time.Hour).UTC())
+		err = SetNextScan(ctx, db, time.Now().Add(DefaultNextScanOffset).UTC())
 		if err != nil {
 			return time.Time{}, err
 		}
@@ -234,7 +256,7 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.ExtFieldLogger
 	t, err := time.Parse(time.RFC3339, val)
 	if err != nil {
 		logger.Warnf("Invalid database value for '%s': '%s', setting a new one.", ConfNextScan, val)
-		err = SetNextScan(ctx, db, time.Now().Add(time.Hour).UTC())
+		err = SetNextScan(ctx, db, time.Now().Add(DefaultNextScanOffset).UTC())
 		if err != nil {
 			return time.Time{}, err
 		}
@@ -247,5 +269,8 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.ExtFieldLogger
 
 // SetNextScan sets the time of the next cluster-wide scan for underpinned files.
 func SetNextScan(ctx context.Context, db *database.DB, t time.Time) error {
+	if t.Before(time.Now().UTC().Add(SleepBetweenChecksForScan)) {
+		return ErrTimeTooSoon
+	}
 	return db.SetConfigValue(ctx, ConfNextScan, t.UTC().Format(time.RFC3339))
 }

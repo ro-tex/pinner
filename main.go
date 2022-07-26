@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"log"
+
 	"github.com/skynetlabs/pinner/api"
 	"github.com/skynetlabs/pinner/build"
 	"github.com/skynetlabs/pinner/conf"
@@ -11,7 +13,6 @@ import (
 	"github.com/skynetlabs/pinner/sweeper"
 	"github.com/skynetlabs/pinner/workers"
 	"gitlab.com/NebulousLabs/errors"
-	"log"
 )
 
 func main() {
