@@ -98,9 +98,9 @@ type (
 
 // NewScanner creates a new Scanner instance.
 func NewScanner(db *database.DB, logger logger.Logger, minPinners int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
-	sleep := sleepBetweenScans
-	if customSleepBetweenScans > 0 {
-		sleep = customSleepBetweenScans
+	sleep := customSleepBetweenScans
+	if sleep == 0 {
+		sleep = sleepBetweenScans
 	}
 	return &Scanner{
 		staticDB:                db,
@@ -154,7 +154,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// On error, we'll sleep for half an hour and we'll try again.
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to fetch next scan time"))
-			stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+			stopped := s.staticSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return
 			}
@@ -164,7 +164,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// for half an hour and we'll check again. It's possible for the
 		// schedule to change in the meantime.
 		if t.UTC().After(time.Now().UTC().Add(conf.SleepBetweenChecksForScan)) {
-			stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+			stopped := s.staticSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return
 			}
@@ -193,17 +193,17 @@ func (s *Scanner) threadedScanAndPin() {
 		s.staticLogger.Tracef("End scanning")
 
 		// Schedule the next scan, unless already scheduled:
-		stopped := s.managedScheduleNextScan()
+		stopped := s.staticScheduleNextScan()
 		if stopped {
 			return
 		}
 	}
 }
 
-// managedScheduleNextScan attempts to set the time of the next scan until either we
+// staticScheduleNextScan attempts to set the time of the next scan until either we
 // succeed, another server succeeds, or Scanner's TG is stopped. Returns true
 // when Scanner's TG is stopped.
-func (s *Scanner) managedScheduleNextScan() bool {
+func (s *Scanner) staticScheduleNextScan() bool {
 	// Keep trying to set the time until you succeed or until some other server
 	// succeeds.
 	for {
@@ -211,7 +211,7 @@ func (s *Scanner) managedScheduleNextScan() bool {
 		t, err := conf.NextScan(context.Background(), s.staticDB, s.staticLogger)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to fetch next scan time"))
-			stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+			stopped := s.staticSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return true
 			}
@@ -225,7 +225,7 @@ func (s *Scanner) managedScheduleNextScan() bool {
 				// Log the error and sleep for half an hour. Meanwhile, another
 				// server will finish its scan and will set the next scan time.
 				s.staticLogger.Debug(errors.AddContext(err, "failed to set next scan time"))
-				stopped := s.managedSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
+				stopped := s.staticSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 				if stopped {
 					return true
 				}
@@ -261,7 +261,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		// is an error, then there is nothing to wait for.
 		if err == nil {
 			// Block until the pinned skylink becomes healthy or until a timeout.
-			s.managedWaitUntilHealthy(skylink, sp)
+			s.staticWaitUntilHealthy(skylink, sp)
 			continue
 		}
 		// In case of error we still want to sleep for a moment in order to
@@ -269,7 +269,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		// fail to mark as pinned. Note that this only happens when we want
 		// to continue scanning, otherwise we would have exited right after
 		// managedFindAndPinOneUnderpinnedSkylink.
-		stopped := s.managedSleepForOrUntilStopped(SleepBetweenPins)
+		stopped := s.staticSleepForOrUntilStopped(SleepBetweenPins)
 		if stopped {
 			return
 		}
@@ -281,7 +281,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 // skylink, it pins it to the local skyd. The method returns true until it finds
 // no further skylinks to process or until it encounters an unrecoverable error,
 // such as bad credentials, dead skyd, etc.
-func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.Skylink, sf skymodules.SiaPath, continueScanning bool, err error) {
+func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.Skylink, sp skymodules.SiaPath, continueScanning bool, err error) {
 	s.staticLogger.Trace("Entering managedFindAndPinOneUnderpinnedSkylink")
 	defer s.staticLogger.Trace("Exiting  managedFindAndPinOneUnderpinnedSkylink")
 
@@ -311,7 +311,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, errors.New("dry run")
 	}
 
-	sf, err = s.staticSkydClient.Pin(sl.String())
+	sp, err = s.staticSkydClient.Pin(sl.String())
 	if errors.Contains(err, skyd.ErrSkylinkAlreadyPinned) {
 		s.staticLogger.Info(err)
 		// The skylink is already pinned locally but it's not marked as such.
@@ -338,18 +338,18 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	if err != nil {
 		s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
 	}
-	return sl, sf, true, nil
+	return sl, sp, true, nil
 }
 
-// estimateTimeToFull calculates how long we should sleep after pinning the given
-// skylink in order to give the renter time to fully upload it before we pin
-// another one. It returns a ballpark value.
+// staticEstimateTimeToFull calculates how long we should sleep after pinning
+// the given skylink in order to give the renter time to fully upload it before
+// we pin another one. It returns a ballpark value.
 //
 // This method makes some assumptions for simplicity:
 // * assumes lazy pinning, meaning that none of the fanout is uploaded
 // * all skyfiles are assumed to be large files (base sector + fanout) and the
 //	metadata is assumed to fill up the base sector (to err on the safe side)
-func (s *Scanner) estimateTimeToFull(skylink skymodules.Skylink) time.Duration {
+func (s *Scanner) staticEstimateTimeToFull(skylink skymodules.Skylink) time.Duration {
 	meta, err := s.staticSkydClient.Metadata(skylink.String())
 	if err != nil {
 		err = errors.AddContext(err, "failed to get metadata for skylink")
@@ -360,6 +360,10 @@ func (s *Scanner) estimateTimeToFull(skylink skymodules.Skylink) time.Duration {
 	numChunks := meta.Length / chunkSize
 	if meta.Length%chunkSize > 0 {
 		numChunks++
+	}
+	// We always have at least the base sector.
+	if numChunks == 0 {
+		numChunks = 1
 	}
 	// remainingUpload is the amount of data we expect to need to upload until
 	// the skyfile reaches full redundancy.
@@ -395,17 +399,16 @@ func (s *Scanner) managedRefreshMinPinners() {
 	s.mu.Unlock()
 }
 
-// managedWaitUntilHealthy blocks until the given skylinks becomes fully healthy
+// staticWaitUntilHealthy blocks until the given skylinks becomes fully healthy
 // or a timeout occurs.
-//
-// The method is marked as managed because it performs long-running operations.
-func (s *Scanner) managedWaitUntilHealthy(skylink skymodules.Skylink, sp skymodules.SiaPath) {
+func (s *Scanner) staticWaitUntilHealthy(skylink skymodules.Skylink, sp skymodules.SiaPath) {
 	deadlineTimer := s.staticDeadline(skylink)
 	defer deadlineTimer.Stop()
 	ticker := time.NewTicker(SleepBetweenHealthChecks)
 	defer ticker.Stop()
 
 	// Wait for the pinned file to become fully healthy.
+LOOP:
 	for {
 		health, err := s.staticSkydClient.FileHealth(sp)
 		if err != nil {
@@ -423,17 +426,17 @@ func (s *Scanner) managedWaitUntilHealthy(skylink skymodules.Skylink, sp skymodu
 			s.staticLogger.Debugf("Waiting for '%s' to become fully healthy. Current health: %.2f", skylink, health)
 		case <-deadlineTimer.C:
 			s.staticLogger.Warnf("Skylink '%s' failed to reach full health within the time limit.", skylink)
-			break
+			break LOOP
 		case <-s.staticTG.StopChan():
 			return
 		}
 	}
 }
 
-// managedSleepForOrUntilStopped is a helper function that blocks for the given
+// staticSleepForOrUntilStopped is a helper function that blocks for the given
 // duration  or until the Scanner's thread group is stopped. Returns true if the
 // TG was  stopped.
-func (s *Scanner) managedSleepForOrUntilStopped(dur time.Duration) bool {
+func (s *Scanner) staticSleepForOrUntilStopped(dur time.Duration) bool {
 	select {
 	case <-time.After(dur):
 		return false
@@ -445,7 +448,7 @@ func (s *Scanner) managedSleepForOrUntilStopped(dur time.Duration) bool {
 
 // staticDeadline calculates how much we are willing to wait for a skylink to be fully
 // healthy before giving up. It's twice the expected time, as returned by
-// estimateTimeToFull.
+// staticEstimateTimeToFull.
 func (s *Scanner) staticDeadline(skylink skymodules.Skylink) *time.Timer {
-	return time.NewTimer(2 * s.estimateTimeToFull(skylink))
+	return time.NewTimer(2 * s.staticEstimateTimeToFull(skylink))
 }

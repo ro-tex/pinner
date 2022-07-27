@@ -12,6 +12,7 @@ import (
 type (
 	// ClientMock is a mock of skyd.Client
 	ClientMock struct {
+		fileHealth     map[skymodules.SiaPath]float64
 		filesystemMock map[skymodules.SiaPath]rdReturnType
 		metadata       map[string]skymodules.SkyfileMetadata
 		metadataErrors map[string]error
@@ -32,6 +33,7 @@ type (
 // NewSkydClientMock returns an initialised copy of ClientMock
 func NewSkydClientMock() *ClientMock {
 	return &ClientMock{
+		fileHealth:     make(map[skymodules.SiaPath]float64),
 		filesystemMock: make(map[skymodules.SiaPath]rdReturnType),
 		metadata:       make(map[string]skymodules.SkyfileMetadata),
 		metadataErrors: make(map[string]error),
@@ -66,8 +68,11 @@ func (c *ClientMock) DiffPinnedSkylinks(skylinks []string) (unknown []string, mi
 }
 
 // FileHealth returns the health of the given skylink.
-func (c *ClientMock) FileHealth(_ skymodules.SiaPath) (float64, error) {
-	return 0, nil
+// Note that the mock will return 0 (fully healthy) by default.
+func (c *ClientMock) FileHealth(sl skymodules.SiaPath) (float64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.fileHealth[sl], nil
 }
 
 // IsPinning checks whether skyd is pinning the given skylink.
@@ -94,13 +99,17 @@ func (c *ClientMock) Metadata(skylink string) (skymodules.SkyfileMetadata, error
 func (c *ClientMock) Pin(skylink string) (skymodules.SiaPath, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.pinError == nil {
-		c.skylinks[skylink] = struct{}{}
+	if c.pinError != nil {
+		return skymodules.SiaPath{}, c.pinError
 	}
+	if _, exists := c.skylinks[skylink]; exists {
+		return skymodules.SiaPath{}, ErrSkylinkAlreadyPinned
+	}
+	c.skylinks[skylink] = struct{}{}
 	sp := skymodules.SiaPath{
 		Path: skylink,
 	}
-	return sp, c.pinError
+	return sp, nil
 }
 
 // RebuildCache is a noop mock that takes at least 100ms.
@@ -125,6 +134,13 @@ func (c *ClientMock) RenterDirRootGet(siaPath skymodules.SiaPath) (rd api.Renter
 		return api.RenterDirectory{}, errors.New("siapath does not exist")
 	}
 	return r.RD, r.Err
+}
+
+// SetHealth allows us to set the health of a sia file.
+func (c *ClientMock) SetHealth(sp skymodules.SiaPath, h float64) {
+	c.mu.Lock()
+	c.fileHealth[sp] = h
+	c.mu.Unlock()
 }
 
 // SetMapping allows us to set the state of the filesystem mock.
