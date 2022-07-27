@@ -181,21 +181,21 @@ func (c *ClientMock) SetUnpinError(e error) {
 //
 // SkynetFolder/ (three dirs, one file)
 //    dirA/ (two files, one skylink each)
-//       fileA1 (A1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
-//       fileA2 (A2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//       fileA1 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1)
+//       fileA2 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A2)
 //    dirB/ (one file, one dir)
 //       dirC/ (one file, two skylinks)
-//          fileC (C1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg, C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
-//       fileB (B__uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//          fileC (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C1, C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//       fileB (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B)
 //    dirD/ (empty)
-//    file (___uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//    file (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___)
 func (c *ClientMock) MockFilesystem() []string {
-	slR0 := "___uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slA1 := "A1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slA2 := "A2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slC0 := "C1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slC1 := "C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slB0 := "B__uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
+	slR0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___"
+	slA1 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1"
+	slA2 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A2"
+	slC0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C1"
+	slC1 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C2"
+	slB0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B"
 
 	dirAsp := skymodules.SiaPath{Path: "dirA"}
 	dirBsp := skymodules.SiaPath{Path: "dirB"}

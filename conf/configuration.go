@@ -68,7 +68,7 @@ var (
 	// DefaultNextScanOffset is the time to next scan we set when we don't have
 	// any value configured in the DB. It should be such a value that it gives
 	// all servers enough time to read the DB and be ready by the time of the
-	//scan.
+	// scan.
 	DefaultNextScanOffset = 2 * SleepBetweenChecksForScan
 	// SleepBetweenChecksForScan defines how often we'll check the DB for
 	// the next scheduled scan. Changing this values will affect the values in
@@ -229,7 +229,7 @@ func MinPinners(ctx context.Context, db *database.DB) (int, error) {
 		return 0, err
 	}
 	if mp < minPinnersMinValue || mp > maxPinnersMinValue {
-		errMsg := fmt.Sprintf("Invalid min_pinners value in database configuration! The value must be between %d and %d, it was %v.", mp, minPinnersMinValue, maxPinnersMinValue)
+		errMsg := fmt.Sprintf("invalid min_pinners value in database configuration! The value must be between %d and %d, it was %v.", mp, minPinnersMinValue, maxPinnersMinValue)
 		build.Critical(errMsg)
 		return 0, errors.New(errMsg)
 	}
