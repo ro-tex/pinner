@@ -1,6 +1,7 @@
 package skyd
 
 import (
+	"fmt"
 	"sync"
 
 	"gitlab.com/NebulousLabs/errors"
@@ -148,6 +149,10 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 		}
 		for _, f := range rd.Files {
 			for _, sl := range f.Skylinks {
+				if !validSkylink(sl) {
+					build.Critical(fmt.Errorf("Detected invalid skylink in a sia file: skylink '%s', siapath: '%s'", sl, f.SiaPath))
+					continue
+				}
 				sls[sl] = struct{}{}
 			}
 		}
@@ -162,6 +167,13 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 	psc.mu.Lock()
 	psc.skylinks = sls
 	psc.mu.Unlock()
+}
+
+// validSkylink ensures the given string is a valid skylink.
+func validSkylink(sl string) bool {
+	s := skymodules.Skylink{}
+	err := s.LoadString(sl)
+	return err == nil
 }
 
 // NewRebuildCacheResult returns a new RebuildCacheResult

@@ -8,6 +8,7 @@ import (
 
 type (
 	// Status represents the status of a sweep.
+	// All times are UTC-based in order to simplify handling and comparison.
 	Status struct {
 		InProgress bool
 		Error      error
