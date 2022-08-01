@@ -4,12 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io/ioutil"
-	"net/http"
-	"net/url"
-	"regexp"
-	"time"
-
 	"github.com/sirupsen/logrus"
 	"github.com/skynetlabs/pinner/api"
 	"github.com/skynetlabs/pinner/database"
@@ -18,17 +12,21 @@ import (
 	"github.com/skynetlabs/pinner/sweeper"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/SkynetLabs/skyd/build"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"regexp"
+	"time"
 )
 
 var (
-	testPortalAddr = "http://127.0.0.1"
-	testPortalPort = "6000"
-
 	// dontFollowRedirectsCheckRedirectFn is a function that instructs http.Client
 	// to return with the last user response, instead of following a redirect.
 	dontFollowRedirectsCheckRedirectFn = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
+	testPortalAddr = "http://127.0.0.1"
+	testPortalPort = "6000"
 )
 
 type (
@@ -51,9 +49,18 @@ func NewDatabase(ctx context.Context, dbName string) (*database.DB, error) {
 	return database.NewCustomDB(ctx, SanitizeName(dbName), DBTestCredentials(), NewDiscardLogger())
 }
 
+// NewDiscardLogger returns a new logger that sends all output to ioutil.Discard.
+func NewDiscardLogger() *logrus.Logger {
+	logger := logrus.New()
+	logger.Out = ioutil.Discard
+	return logger
+}
+
 // NewTester creates and starts a new Tester service.
 // Use the Close method for a graceful shutdown.
 func NewTester(dbName string) (*Tester, error) {
+	// We don't use our test context here because the tester can be shared by
+	// many tests and can live for a very long time.
 	ctx := context.Background()
 	logger := NewDiscardLogger()
 
@@ -114,13 +121,6 @@ func NewTester(dbName string) (*Tester, error) {
 	return at, nil
 }
 
-// NewDiscardLogger returns a new logger that sends all output to ioutil.Discard.
-func NewDiscardLogger() *logrus.Logger {
-	logger := logrus.New()
-	logger.Out = ioutil.Discard
-	return logger
-}
-
 // SanitizeName sanitizes the input for all kinds of unwanted characters and
 // replaces those with underscores.
 // See https://docs.mongodb.com/manual/reference/limits/#naming-restrictions
@@ -147,37 +147,23 @@ func (t *Tester) Close() error {
 	return nil
 }
 
-// SetFollowRedirects configures the tester to either follow HTTP redirects or
-// not. The default is to follow them.
-func (t *Tester) SetFollowRedirects(f bool) {
-	t.FollowRedirects = f
+// HealthGET checks the health of the service.
+func (t *Tester) HealthGET() (api.HealthGET, int, error) {
+	var resp api.HealthGET
+	r, err := t.Request(http.MethodGet, "/health", nil, nil, nil, &resp)
+	return resp, r.StatusCode, err
 }
 
-// post executes a POST Request against the test service.
-//
-// NOTE: The Body of the returned response is already read and closed.
-func (t *Tester) post(endpoint string, params url.Values, bodyParams url.Values) (*http.Response, []byte, error) {
-	if params == nil {
-		params = url.Values{}
-	}
-	bodyMap := make(map[string]string)
-	for k, v := range bodyParams {
-		if len(v) == 0 {
-			continue
-		}
-		bodyMap[k] = v[0]
-	}
-	bodyBytes, err := json.Marshal(bodyMap)
+// PinPOST tells pinner that the current server is pinning a given skylink.
+func (t *Tester) PinPOST(sl string) (int, error) {
+	body, err := json.Marshal(api.SkylinkRequest{
+		Skylink: sl,
+	})
 	if err != nil {
-		return &http.Response{}, nil, err
+		return http.StatusBadRequest, errors.AddContext(err, "unable to marshal request body")
 	}
-	serviceURL := testPortalAddr + ":" + testPortalPort + endpoint + "?" + params.Encode()
-	req, err := http.NewRequest(http.MethodPost, serviceURL, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return &http.Response{}, nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return t.executeRequest(req)
+	r, err := t.Request(http.MethodPost, "/pin", nil, body, nil, nil)
+	return r.StatusCode, err
 }
 
 // Request is a helper method that puts together and executes an HTTP
@@ -221,6 +207,42 @@ func (t *Tester) Request(method string, endpoint string, queryParams url.Values,
 	return r, err
 }
 
+// SetFollowRedirects configures the tester to either follow HTTP redirects or
+// not. The default is to follow them.
+func (t *Tester) SetFollowRedirects(f bool) {
+	t.FollowRedirects = f
+}
+
+// SweepPOST kicks off a background process which gets all files pinned by skyd
+// and marks them in the DB as pinned by the current server. It also goes over
+// all files in the DB that are marked as pinned by the local skyd and unmarks
+// those which are not in the list reported by skyd.
+func (t *Tester) SweepPOST() (api.SweepPOSTResponse, int, error) {
+	var resp api.SweepPOSTResponse
+	r, err := t.Request(http.MethodPost, "/sweep", nil, nil, nil, &resp)
+	return resp, r.StatusCode, err
+}
+
+// SweepStatusGET returns the status of the latest sweep.
+func (t *Tester) SweepStatusGET() (sweeper.Status, int, error) {
+	var resp sweeper.Status
+	r, err := t.Request(http.MethodGet, "/sweep/status", nil, nil, nil, &resp)
+	return resp, r.StatusCode, err
+}
+
+// UnpinPOST tells pinner that no users are pinning this skylink and it should
+// be unpinned by all servers.
+func (t *Tester) UnpinPOST(sl string) (int, error) {
+	body, err := json.Marshal(api.SkylinkRequest{
+		Skylink: sl,
+	})
+	if err != nil {
+		return http.StatusBadRequest, errors.AddContext(err, "unable to marshal request body")
+	}
+	r, err := t.Request(http.MethodPost, "/unpin", nil, body, nil, nil)
+	return r.StatusCode, err
+}
+
 // executeRequest is a helper method which executes a test Request and processes
 // the response by extracting the body from it and handling non-OK status codes.
 //
@@ -240,6 +262,33 @@ func (t *Tester) executeRequest(req *http.Request) (*http.Response, []byte, erro
 	return processResponse(r)
 }
 
+// post executes a POST Request against the test service.
+//
+// NOTE: The Body of the returned response is already read and closed.
+func (t *Tester) post(endpoint string, params url.Values, bodyParams url.Values) (*http.Response, []byte, error) {
+	if params == nil {
+		params = url.Values{}
+	}
+	bodyMap := make(map[string]string)
+	for k, v := range bodyParams {
+		if len(v) == 0 {
+			continue
+		}
+		bodyMap[k] = v[0]
+	}
+	bodyBytes, err := json.Marshal(bodyMap)
+	if err != nil {
+		return &http.Response{}, nil, err
+	}
+	serviceURL := testPortalAddr + ":" + testPortalPort + endpoint + "?" + params.Encode()
+	req, err := http.NewRequest(http.MethodPost, serviceURL, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return &http.Response{}, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return t.executeRequest(req)
+}
+
 // processResponse is a helper method which extracts the body from the response
 // and handles non-OK status codes.
 //
@@ -253,53 +302,4 @@ func processResponse(r *http.Response) (*http.Response, []byte, error) {
 		err = errors.Compose(err, errors.New(r.Status))
 	}
 	return r, body, err
-}
-
-// HealthGET checks the health of the service.
-func (t *Tester) HealthGET() (api.HealthGET, int, error) {
-	var resp api.HealthGET
-	r, err := t.Request(http.MethodGet, "/health", nil, nil, nil, &resp)
-	return resp, r.StatusCode, err
-}
-
-// PinPOST tells pinner that the current server is pinning a given skylink.
-func (t *Tester) PinPOST(sl string) (int, error) {
-	body, err := json.Marshal(api.SkylinkRequest{
-		Skylink: sl,
-	})
-	if err != nil {
-		return http.StatusBadRequest, errors.AddContext(err, "unable to marshal request body")
-	}
-	r, err := t.Request(http.MethodPost, "/pin", nil, body, nil, nil)
-	return r.StatusCode, err
-}
-
-// UnpinPOST tells pinner that no users are pinning this skylink and it should
-// be unpinned by all servers.
-func (t *Tester) UnpinPOST(sl string) (int, error) {
-	body, err := json.Marshal(api.SkylinkRequest{
-		Skylink: sl,
-	})
-	if err != nil {
-		return http.StatusBadRequest, errors.AddContext(err, "unable to marshal request body")
-	}
-	r, err := t.Request(http.MethodPost, "/unpin", nil, body, nil, nil)
-	return r.StatusCode, err
-}
-
-// SweepPOST kicks off a background process which gets all files pinned by skyd
-// and marks them in the DB as pinned by the current server. It also goes over
-// all files in the DB that are marked as pinned by the local skyd and unmarks
-// those which are not in the list reported by skyd.
-func (t *Tester) SweepPOST() (api.SweepPOSTResponse, int, error) {
-	var resp api.SweepPOSTResponse
-	r, err := t.Request(http.MethodPost, "/sweep", nil, nil, nil, &resp)
-	return resp, r.StatusCode, err
-}
-
-// SweepStatusGET returns the status of the latest sweep.
-func (t *Tester) SweepStatusGET() (sweeper.Status, int, error) {
-	var resp sweeper.Status
-	r, err := t.Request(http.MethodGet, "/sweep/status", nil, nil, nil, &resp)
-	return resp, r.StatusCode, err
 }

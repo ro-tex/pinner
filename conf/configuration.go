@@ -60,16 +60,22 @@ const (
 	maxPinnersMinValue = 10
 )
 
-var (
-	// ErrTimeTooSoon is returned when we try to set the time of the next scan
-	// too soon, not giving all servers enough time to get the memo.
-	ErrTimeTooSoon = errors.New("time is too soon")
+const (
+	// TimeFormat defines the time format we'll use throughout the service.
+	TimeFormat = time.RFC3339
+)
 
+var (
 	// DefaultNextScanOffset is the time to next scan we set when we don't have
 	// any value configured in the DB. It should be such a value that it gives
 	// all servers enough time to read the DB and be ready by the time of the
 	// scan.
 	DefaultNextScanOffset = 2 * SleepBetweenChecksForScan
+
+	// ErrTimeTooSoon is returned when we try to set the time of the next scan
+	// too soon, not giving all servers enough time to get the memo.
+	ErrTimeTooSoon = errors.New("time is too soon")
+
 	// SleepBetweenChecksForScan defines how often we'll check the DB for
 	// the next scheduled scan. Changing this values will affect the values in
 	// conf.NextScan (when there isn't a scan scheduled we want to schedule it
@@ -242,27 +248,28 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.
 	if errors.Contains(err, mongo.ErrNoDocuments) {
 		logger.Infof("Missing database value for '%s', setting a new one.", ConfNextScan)
 		// No scan has been scheduled. Schedule one in an hour.
-		err = SetNextScan(ctx, db, time.Now().Add(DefaultNextScanOffset).UTC())
+		scanTime := time.Now().Add(DefaultNextScanOffset).UTC()
+		err = SetNextScan(ctx, db, scanTime)
 		if err != nil {
 			return time.Time{}, err
 		}
-		// Read the value from the DB in order to avoid race conditions.
-		// While this does not eliminate data races, it does help.
-		return NextScan(ctx, db, logger)
+		return scanTime, nil
 	}
 	if err != nil {
 		return time.Time{}, err
 	}
-	t, err := time.Parse(time.RFC3339, val)
+	t, err := time.Parse(TimeFormat, val)
 	if err != nil {
-		logger.Warnf("Invalid database value for '%s': '%s', setting a new one.", ConfNextScan, val)
-		err = SetNextScan(ctx, db, time.Now().Add(DefaultNextScanOffset).UTC())
+		errMsg := fmt.Sprintf("Invalid database value for '%s': '%s', setting a new one.", ConfNextScan, val)
+		logger.Error(errMsg)
+		build.Critical(errors.AddContext(err, "potential programmer error"))
+		// The values in the database is unusable. Schedule a scan in an hour.
+		scanTime := time.Now().Add(DefaultNextScanOffset).UTC()
+		err = SetNextScan(ctx, db, scanTime)
 		if err != nil {
 			return time.Time{}, err
 		}
-		// Read the value from the DB in order to avoid race conditions.
-		// While this does not eliminate data races, it does help.
-		return NextScan(ctx, db, logger)
+		return scanTime, nil
 	}
 	return t, nil
 }
@@ -272,5 +279,5 @@ func SetNextScan(ctx context.Context, db *database.DB, t time.Time) error {
 	if t.Before(time.Now().UTC().Add(SleepBetweenChecksForScan)) {
 		return ErrTimeTooSoon
 	}
-	return db.SetConfigValue(ctx, ConfNextScan, t.UTC().Format(time.RFC3339))
+	return db.SetConfigValue(ctx, ConfNextScan, t.UTC().Format(TimeFormat))
 }
