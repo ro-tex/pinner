@@ -170,8 +170,9 @@ func testNextScan(t *testing.T, db *database.DB) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	if t0.After(now.Add(time.Second)) || t0.Before(now.Add(-1*time.Second)) {
-		t.Fatalf("Expected '%s', got '%s'", now.Add(conf.DefaultNextScanOffset), t0)
+	tolerance := 5 * time.Second
+	if t0.After(now.Add(tolerance)) || t0.Before(now.Add(-1*tolerance)) {
+		t.Fatalf("Expected roughly '%s', got '%s'", now.Add(conf.DefaultNextScanOffset), t0)
 	}
 	// Try to set an invalid value.
 	err = conf.SetNextScan(ctx, db, time.Now().UTC().Add(-1*time.Hour))
