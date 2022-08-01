@@ -1,7 +1,6 @@
 package sweeper
 
 import (
-	"context"
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/sweeper"
 	"github.com/skynetlabs/pinner/test"
@@ -16,7 +15,8 @@ func TestSweeper(t *testing.T) {
 	}
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)

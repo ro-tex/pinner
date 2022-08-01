@@ -29,7 +29,8 @@ func TestScannerDryRun(t *testing.T) {
 	}
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +168,9 @@ func TestScanner(t *testing.T) {
 	}
 	t.Parallel()
 
+	// This is an entire test suite, so it's possible for it to run well beyond
+	// our default timeout for a single test. That's why we use a context with
+	// no timeout.
 	ctx := context.Background()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
@@ -210,7 +214,8 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	// Add a skylink from the name of a different server.
 	sl := test.RandomSkylink()
 	otherServer := "other server"
@@ -344,8 +349,8 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 	t0 = time.Now().UTC()
 	s.staticWaitUntilHealthy(sl, sp)
 	t1 = time.Now().UTC()
-	// Expect the time difference to be around 100ms. Add 2ms tolerance.
-	if t0.Add(102 * time.Millisecond).Before(t1) {
+	// Expect the time difference to be around 100ms. Add 5ms tolerance.
+	if t0.Add(105 * time.Millisecond).Before(t1) {
 		t.Fatalf("Expected to wait for 100ms, waited for %d ms", t1.Sub(t0).Milliseconds())
 	}
 
@@ -368,7 +373,8 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	}
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)

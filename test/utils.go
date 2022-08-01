@@ -1,8 +1,10 @@
 package test
 
 import (
+	"context"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
@@ -32,6 +34,16 @@ func DBTestCredentials() database.DBCredentials {
 		Host:     "localhost",
 		Port:     "17018",
 	}
+}
+
+// Contains checks whether the given slice contains the given element.
+func Contains[T comparable](haystack []T, needle T) bool {
+	for _, el := range haystack {
+		if needle == el {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadTestConfig temporarily replaces environment variables with their
@@ -91,12 +103,8 @@ func RandomSkylink() skymodules.Skylink {
 	return sl
 }
 
-// Contains checks whether the given slice contains the given element.
-func Contains[T comparable](haystack []T, needle T) bool {
-	for _, el := range haystack {
-		if needle == el {
-			return true
-		}
-	}
-	return false
+// Context returns a context with default timeout. We should use this in
+// most tests, so the CI doesn't run into timeouts.
+func Context() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Minute)
 }

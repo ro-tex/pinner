@@ -48,7 +48,8 @@ func curryDB(fn func(t *testing.T, db *database.DB), db *database.DB) func(t *te
 
 // testDryRun ensures DryRun functions correctly.
 func testDryRun(t *testing.T, db *database.DB) {
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	// Check value before setting, expect false.
 	val, err := conf.DryRun(ctx, db)
 	if err != nil {
@@ -91,7 +92,8 @@ func testDryRun(t *testing.T, db *database.DB) {
 
 // testMinPinners ensures MinPinners functions correctly.
 func testMinPinners(t *testing.T, db *database.DB) {
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	val, err := conf.MinPinners(ctx, db)
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +156,8 @@ func testMinPinners(t *testing.T, db *database.DB) {
 
 // testNextScan ensures NextScan and SetNextScan function correctly.
 func testNextScan(t *testing.T, db *database.DB) {
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	logger := test.NewDiscardLogger()
 	// Ensure that there is no value in the DB.
 	_, err := db.ConfigValue(ctx, conf.ConfNextScan)
