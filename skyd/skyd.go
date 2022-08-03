@@ -48,13 +48,13 @@ type (
 	// client allows us to call the local skyd instance.
 	client struct {
 		staticClient        *skydclient.Client
-		staticLogger        logger.ExtFieldLogger
+		staticLogger        logger.Logger
 		staticSkylinksCache *PinnedSkylinksCache
 	}
 )
 
 // NewClient creates a new skyd client.
-func NewClient(host, port, password string, cache *PinnedSkylinksCache, logger logger.ExtFieldLogger) Client {
+func NewClient(host, port, password string, cache *PinnedSkylinksCache, logger logger.Logger) Client {
 	opts := skydclient.Options{
 		Address:       fmt.Sprintf("%s:%s", host, port),
 		Password:      password,

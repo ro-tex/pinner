@@ -12,6 +12,7 @@ import (
 type (
 	// ClientMock is a mock of skyd.Client
 	ClientMock struct {
+		fileHealth     map[skymodules.SiaPath]float64
 		filesystemMock map[skymodules.SiaPath]rdReturnType
 		metadata       map[string]skymodules.SkyfileMetadata
 		metadataErrors map[string]error
@@ -32,6 +33,7 @@ type (
 // NewSkydClientMock returns an initialised copy of ClientMock
 func NewSkydClientMock() *ClientMock {
 	return &ClientMock{
+		fileHealth:     make(map[skymodules.SiaPath]float64),
 		filesystemMock: make(map[skymodules.SiaPath]rdReturnType),
 		metadata:       make(map[string]skymodules.SkyfileMetadata),
 		metadataErrors: make(map[string]error),
@@ -66,8 +68,11 @@ func (c *ClientMock) DiffPinnedSkylinks(skylinks []string) (unknown []string, mi
 }
 
 // FileHealth returns the health of the given skylink.
-func (c *ClientMock) FileHealth(_ skymodules.SiaPath) (float64, error) {
-	return 0, nil
+// Note that the mock will return 0 (fully healthy) by default.
+func (c *ClientMock) FileHealth(sl skymodules.SiaPath) (float64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.fileHealth[sl], nil
 }
 
 // IsPinning checks whether skyd is pinning the given skylink.
@@ -94,13 +99,17 @@ func (c *ClientMock) Metadata(skylink string) (skymodules.SkyfileMetadata, error
 func (c *ClientMock) Pin(skylink string) (skymodules.SiaPath, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.pinError == nil {
-		c.skylinks[skylink] = struct{}{}
+	if c.pinError != nil {
+		return skymodules.SiaPath{}, c.pinError
 	}
+	if _, exists := c.skylinks[skylink]; exists {
+		return skymodules.SiaPath{}, ErrSkylinkAlreadyPinned
+	}
+	c.skylinks[skylink] = struct{}{}
 	sp := skymodules.SiaPath{
 		Path: skylink,
 	}
-	return sp, c.pinError
+	return sp, nil
 }
 
 // RebuildCache is a noop mock that takes at least 100ms.
@@ -125,6 +134,13 @@ func (c *ClientMock) RenterDirRootGet(siaPath skymodules.SiaPath) (rd api.Renter
 		return api.RenterDirectory{}, errors.New("siapath does not exist")
 	}
 	return r.RD, r.Err
+}
+
+// SetHealth allows us to set the health of a sia file.
+func (c *ClientMock) SetHealth(sp skymodules.SiaPath, h float64) {
+	c.mu.Lock()
+	c.fileHealth[sp] = h
+	c.mu.Unlock()
 }
 
 // SetMapping allows us to set the state of the filesystem mock.
@@ -181,21 +197,21 @@ func (c *ClientMock) SetUnpinError(e error) {
 //
 // SkynetFolder/ (three dirs, one file)
 //    dirA/ (two files, one skylink each)
-//       fileA1 (A1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
-//       fileA2 (A2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//       fileA1 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1)
+//       fileA2 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A2)
 //    dirB/ (one file, one dir)
 //       dirC/ (one file, two skylinks)
-//          fileC (C1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg, C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
-//       fileB (B__uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//          fileC (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C1, C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//       fileB (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B)
 //    dirD/ (empty)
-//    file (___uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//    file (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___)
 func (c *ClientMock) MockFilesystem() []string {
-	slR0 := "___uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slA1 := "A1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slA2 := "A2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slC0 := "C1_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slC1 := "C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
-	slB0 := "B__uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
+	slR0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___"
+	slA1 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1"
+	slA2 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A2"
+	slC0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C1"
+	slC1 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C2"
+	slB0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B"
 
 	dirAsp := skymodules.SiaPath{Path: "dirA"}
 	dirBsp := skymodules.SiaPath{Path: "dirB"}

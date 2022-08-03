@@ -19,7 +19,7 @@ type (
 	API struct {
 		staticServerName string
 		staticDB         *database.DB
-		staticLogger     logger.ExtFieldLogger
+		staticLogger     logger.Logger
 		staticRouter     *httprouter.Router
 		staticSkydClient skyd.Client
 		staticSweeper    *sweeper.Sweeper
@@ -32,7 +32,7 @@ type (
 )
 
 // New returns a new initialised API.
-func New(serverName string, db *database.DB, logger logger.ExtFieldLogger, skydClient skyd.Client, sweeper *sweeper.Sweeper) (*API, error) {
+func New(serverName string, db *database.DB, logger logger.Logger, skydClient skyd.Client, sweeper *sweeper.Sweeper) (*API, error) {
 	if db == nil {
 		return nil, errors.New("no DB provided")
 	}

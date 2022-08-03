@@ -9,32 +9,32 @@ import (
 )
 
 type (
-	// ExtFieldLogger defines the logger interface we need.
+	// Logger defines the logger interface we need.
 	//
 	// It is identical to logrus.Ext1FieldLogger but we are not using that
 	// because it's marked as "Do not use". Instead, we're defining our own in
 	// order to be sure that potential Logrus changes won't break us.
-	ExtFieldLogger interface {
+	Logger interface {
 		logrus.FieldLogger
 		Tracef(format string, args ...interface{})
 		Trace(args ...interface{})
 		Traceln(args ...interface{})
 	}
 
-	// Logger is a wrapper of *logrus.Logger which allows logging to a file on
-	// disk.
-	Logger struct {
+	// SkyLogger is a wrapper of *logrus.Logger which allows logging to a file
+	// on  disk.
+	SkyLogger struct {
 		*logrus.Logger
 		logFile *os.File
 	}
 )
 
-// New creates a new logger that can optionally write to disk.
+// New creates a new SkyLogger that can optionally write to disk.
 //
-// If the given logfile argument is an empty string, the logger will not write
-// to disk.
-func New(level logrus.Level, logfile string) (logger *Logger, err error) {
-	logger = &Logger{
+// If the given logfile argument is an empty string, the SkyLogger will not
+// write to disk.
+func New(level logrus.Level, logfile string) (logger *SkyLogger, err error) {
+	logger = &SkyLogger{
 		logrus.New(),
 		nil,
 	}
@@ -52,8 +52,8 @@ func New(level logrus.Level, logfile string) (logger *Logger, err error) {
 	return logger, nil
 }
 
-// Close gracefully closes all resources used by Logger.
-func (l *Logger) Close() error {
+// Close gracefully closes all resources used by SkyLogger.
+func (l *SkyLogger) Close() error {
 	if l.logFile == nil {
 		return nil
 	}

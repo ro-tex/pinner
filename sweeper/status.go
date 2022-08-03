@@ -8,6 +8,7 @@ import (
 
 type (
 	// Status represents the status of a sweep.
+	// All times are UTC-based in order to simplify handling and comparison.
 	Status struct {
 		InProgress bool
 		Error      error
@@ -17,7 +18,7 @@ type (
 	// status is the internal status type that allows thread-safe updates.
 	status struct {
 		mu           sync.Mutex
-		staticLogger logger.ExtFieldLogger
+		staticLogger logger.Logger
 		status       Status
 	}
 )

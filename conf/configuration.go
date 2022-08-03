@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/logger"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/SkynetLabs/skyd/build"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -40,6 +41,9 @@ const (
 	// ConfMinPinners holds the name of the configuration setting which defines
 	// the minimum number of pinners we want to ensure for each skyfile.
 	ConfMinPinners = "min_pinners"
+	// ConfNextScan holds the name of the configuration setting which controls
+	// when the next cluster-wide scan for underpinned skylinks will happen.
+	ConfNextScan = "next_scan"
 )
 
 const (
@@ -54,6 +58,34 @@ const (
 	// portal operator. The number 10 was arbitrarily chosen as an acceptable
 	// upper bound.
 	maxPinnersMinValue = 10
+)
+
+const (
+	// TimeFormat defines the time format we'll use throughout the service.
+	TimeFormat = time.RFC3339
+)
+
+var (
+	// DefaultNextScanOffset is the time to next scan we set when we don't have
+	// any value configured in the DB. It should be such a value that it gives
+	// all servers enough time to read the DB and be ready by the time of the
+	// scan.
+	DefaultNextScanOffset = 2 * SleepBetweenChecksForScan
+
+	// ErrTimeTooSoon is returned when we try to set the time of the next scan
+	// too soon, not giving all servers enough time to get the memo.
+	ErrTimeTooSoon = errors.New("time is too soon")
+
+	// SleepBetweenChecksForScan defines how often we'll check the DB for
+	// the next scheduled scan. Changing this values will affect the values in
+	// conf.NextScan (when there isn't a scan scheduled we want to schedule it
+	// for after 2*SleepBetweenChecksForScan, so all servers have a chance to
+	// check and sync before we kick it off).
+	SleepBetweenChecksForScan = build.Select(build.Var{
+		Standard: 30 * time.Minute,
+		Dev:      30 * time.Second,
+		Testing:  100 * time.Millisecond,
+	}).(time.Duration)
 )
 
 type (
@@ -203,9 +235,49 @@ func MinPinners(ctx context.Context, db *database.DB) (int, error) {
 		return 0, err
 	}
 	if mp < minPinnersMinValue || mp > maxPinnersMinValue {
-		errMsg := fmt.Sprintf("Invalid min_pinners value in database configuration! The value must be between %d and %d, it was %v.", mp, minPinnersMinValue, maxPinnersMinValue)
+		errMsg := fmt.Sprintf("invalid min_pinners value in database configuration! The value must be between %d and %d, it was %v.", mp, minPinnersMinValue, maxPinnersMinValue)
 		build.Critical(errMsg)
 		return 0, errors.New(errMsg)
 	}
 	return int(mp), nil
+}
+
+// NextScan returns the time of the next cluster-wide scan for underpinned files.
+func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.Time, error) {
+	val, err := db.ConfigValue(ctx, ConfNextScan)
+	if errors.Contains(err, mongo.ErrNoDocuments) {
+		logger.Infof("Missing database value for '%s', setting a new one.", ConfNextScan)
+		// No scan has been scheduled. Schedule one in an hour.
+		scanTime := time.Now().Add(DefaultNextScanOffset).UTC()
+		err = SetNextScan(ctx, db, scanTime)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return scanTime, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	t, err := time.Parse(TimeFormat, val)
+	if err != nil {
+		errMsg := fmt.Sprintf("Invalid database value for '%s': '%s', setting a new one.", ConfNextScan, val)
+		logger.Error(errMsg)
+		build.Critical(errors.AddContext(err, "potential programmer error"))
+		// The values in the database is unusable. Schedule a scan in an hour.
+		scanTime := time.Now().Add(DefaultNextScanOffset).UTC()
+		err = SetNextScan(ctx, db, scanTime)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return scanTime, nil
+	}
+	return t, nil
+}
+
+// SetNextScan sets the time of the next cluster-wide scan for underpinned files.
+func SetNextScan(ctx context.Context, db *database.DB, t time.Time) error {
+	if t.Before(time.Now().UTC().Add(SleepBetweenChecksForScan)) {
+		return ErrTimeTooSoon
+	}
+	return db.SetConfigValue(ctx, ConfNextScan, t.UTC().Format(TimeFormat))
 }

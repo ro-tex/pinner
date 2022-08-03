@@ -1,7 +1,6 @@
 package database
 
 import (
-	"context"
 	"testing"
 
 	"github.com/skynetlabs/pinner/database"
@@ -30,7 +29,8 @@ func TestSkylink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +195,8 @@ func TestFindAndLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +313,8 @@ func TestFindAndLockOwnFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +375,8 @@ func TestSkylinksForServer(t *testing.T) {
 	}
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx, cancel := test.Context()
+	defer cancel()
 	db, err := test.NewDatabase(ctx, t.Name())
 	if err != nil {
 		t.Fatal(err)
