@@ -192,6 +192,16 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 	if err != nil || status != http.StatusOK {
 		t.Fatal(status, err)
 	}
+	// Make sure there's a scan scheduled for about an hour later.
+	t0, err := conf.NextScan(tt.Ctx, tt.DB, tt.Logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeTarget := time.Now().UTC().Add(time.Hour)
+	tolerance := time.Minute
+	if t0.Before(timeTarget.Add(-1*tolerance)) || t0.After(timeTarget.Add(tolerance)) {
+		t.Fatalf("Expected the next scan to be in one hour (%s), got %s", timeTarget.String(), t0.String())
+	}
 	// Make sure the response mentions two skylinks.
 	if r.NumSkylinks != 2 {
 		t.Fatalf("Expected 2 skylinks affected, got %d", r.NumSkylinks)
