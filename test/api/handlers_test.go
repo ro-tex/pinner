@@ -43,6 +43,7 @@ func TestHandlers(t *testing.T) {
 		{name: "Health", test: testHandlerHealthGET},
 		{name: "Pin", test: testHandlerPinPOST},
 		{name: "Unpin", test: testHandlerUnpinPOST},
+		{name: "ServerRemove", test: testServerRemovePOST},
 		{name: "Sweep", test: testHandlerSweep},
 	}
 
@@ -158,6 +159,64 @@ func testHandlerUnpinPOST(t *testing.T, tt *test.Tester) {
 	}
 	if sl2New.Pinned {
 		t.Fatal("Expected the skylink to be marked as unpinned.")
+	}
+}
+
+// testServerRemovePOST tests "POST /server/remove"
+func testServerRemovePOST(t *testing.T, tt *test.Tester) {
+	sl1 := test.RandomSkylink()
+	sl2 := test.RandomSkylink()
+	server := t.Name()
+
+	// Pass empty server name.
+	_, _, err := tt.ServerRemovePOST("")
+	if err == nil || !strings.Contains(err.Error(), "no server found in request body") {
+		t.Fatalf("Expected '%s', got '%s'", "no server found in request body", err)
+	}
+	// Remove a non-existent server. Expect no error, zero skylinks.
+	r, status, err := tt.ServerRemovePOST(server)
+	if err != nil || status != http.StatusOK || r.NumSkylinks != 0 {
+		t.Fatalf("Expected no error, status 200, and zero skylinks affected, got error '%v', status %d and %d skylinks afffected", err, status, r.NumSkylinks)
+	}
+	// Create skylinks and mark them as pinned by the server.
+	_, err = tt.DB.CreateSkylink(tt.Ctx, sl1, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tt.DB.CreateSkylink(tt.Ctx, sl2, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Remove the server.
+	r, status, err = tt.ServerRemovePOST(server)
+	if err != nil || status != http.StatusOK {
+		t.Fatal(status, err)
+	}
+	// Make sure the response mentions two skylinks.
+	if r.NumSkylinks != 2 {
+		t.Fatalf("Expected 2 skylinks affected, got %d", r.NumSkylinks)
+	}
+	// Make sure the server is no longer marked as pinner for those two skylinks.
+	foundSl, err := tt.DB.FindSkylink(tt.Ctx, sl1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foundSl.Skylink != sl1.String() {
+		t.Fatal("Unexpected skylink.")
+	}
+	if test.Contains(foundSl.Servers, server) {
+		t.Fatalf("Expected to not find '%s' in servers list, got '%v'", server, foundSl.Servers)
+	}
+	// Same for the second skylink.
+	foundSl, err = tt.DB.FindSkylink(tt.Ctx, sl2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if foundSl.Skylink != sl2.String() {
+		t.Fatal("Unexpected skylink.")
+	}
+	if test.Contains(foundSl.Servers, server) {
+		t.Fatalf("Expected to not find '%s' in servers list, got '%v'", server, foundSl.Servers)
 	}
 }
 

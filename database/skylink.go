@@ -141,6 +141,21 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 	return err
 }
 
+// RemoveServer removes the server as pinner from all skylinks in the database.
+// Returns the number of skylinks from which the server was removed as pinner.
+func (db *DB) RemoveServer(ctx context.Context, server string) (int64, error) {
+	filter := bson.M{"servers": server}
+	update := bson.M{"$pull": bson.M{"servers": server}}
+	ur, err := db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update)
+	if errors.Contains(err, mongo.ErrNoDocuments) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return ur.ModifiedCount, nil
+}
+
 // RemoveServerFromSkylinks removes a server from the list of servers known to
 // be pinning these skylinks. If a skylink does not exist in the database it
 // will not be inserted.
