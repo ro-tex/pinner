@@ -349,8 +349,8 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 	t0 = time.Now().UTC()
 	s.staticWaitUntilHealthy(sl, sp)
 	t1 = time.Now().UTC()
-	// Expect the time difference to be around 100ms. Add 5ms tolerance.
-	if t0.Add(105 * time.Millisecond).Before(t1) {
+	// Expect the time difference to be around 100ms. Add 50ms tolerance.
+	if t0.Add(150 * time.Millisecond).Before(t1) {
 		t.Fatalf("Expected to wait for 100ms, waited for %d ms", t1.Sub(t0).Milliseconds())
 	}
 
