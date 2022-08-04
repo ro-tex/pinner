@@ -44,11 +44,15 @@ func NewSkydClientMock() *ClientMock {
 
 // ContractData returns the total data from Active and Passive contracts.
 func (c *ClientMock) ContractData() (uint64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.contractData, nil
 }
 
 // SetContractData sets the contract data value returned by the mock.
 func (c *ClientMock) SetContractData(n uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.contractData = n
 }
 
