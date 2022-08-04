@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/skynetlabs/pinner/conf"
@@ -12,6 +13,16 @@ import (
 )
 
 type (
+	// ServerRemoveRequest describes a payload that marks a server as dead.
+	ServerRemoveRequest struct {
+		Server string `json:"server"`
+	}
+	// ServerRemoveResponse returns the removed server and the number of
+	// skylinks it was pinning.
+	ServerRemoveResponse struct {
+		Server      string `json:"server"`
+		NumSkylinks int64  `json:"numSkylinks"`
+	}
 	// HealthGET is the response type of GET /health
 	HealthGET struct {
 		DBAlive    bool `json:"dbAlive"`
@@ -93,6 +104,41 @@ func (api *API) unpinPOST(w http.ResponseWriter, req *http.Request, _ httprouter
 		return
 	}
 	api.WriteSuccess(w)
+}
+
+// serverRemovePOST informs pinner that a given server is dead and should be removed as
+// pinner from all skylinks it's marked as pinning.
+func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+	var body ServerRemoveRequest
+	err := json.NewDecoder(req.Body).Decode(&body)
+	if err != nil {
+		api.WriteError(w, err, http.StatusBadRequest)
+		return
+	}
+	if body.Server == "" {
+		api.WriteError(w, errors.New("no server found in request body"), http.StatusBadRequest)
+		return
+	}
+	// Remove the server as pinner.
+	n, err := api.staticDB.RemoveServer(req.Context(), body.Server)
+	if err != nil {
+		api.WriteError(w, errors.AddContext(err, "failed to remove server"), http.StatusInternalServerError)
+		return
+	}
+	// Schedule a scan for underpinned skylinks in an hour, so all of them can
+	// be repinned ASAP but also all servers in the cluster will have enough
+	// time to get the memo for the scan.
+	t := time.Now().UTC().Add(time.Hour)
+	err = conf.SetNextScan(req.Context(), api.staticDB, t)
+	if err != nil {
+		api.WriteError(w, errors.AddContext(err, "failed to schedule a scan"), http.StatusInternalServerError)
+		return
+	}
+	resp := ServerRemoveResponse{
+		Server:      body.Server,
+		NumSkylinks: n,
+	}
+	api.WriteJSON(w, resp)
 }
 
 // sweepPOST instructs pinner to scan the list of skylinks pinned by skyd and

@@ -213,6 +213,16 @@ func (t *Tester) SetFollowRedirects(f bool) {
 	t.FollowRedirects = f
 }
 
+// ServerRemovePOST removes a server as pinner.
+func (t *Tester) ServerRemovePOST(server string) (api.ServerRemoveResponse, int, error) {
+	body, err := json.Marshal(api.ServerRemoveRequest{
+		Server: server,
+	})
+	var resp api.ServerRemoveResponse
+	r, err := t.Request(http.MethodPost, "/server/remove", nil, body, nil, &resp)
+	return resp, r.StatusCode, err
+}
+
 // SweepPOST kicks off a background process which gets all files pinned by skyd
 // and marks them in the DB as pinned by the current server. It also goes over
 // all files in the DB that are marked as pinned by the local skyd and unmarks
