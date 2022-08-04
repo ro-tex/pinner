@@ -202,9 +202,11 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	timeTarget := time.Now().UTC().Add(time.Hour)
-	tolerance := time.Minute
-	if t0.Before(timeTarget.Add(-1*tolerance)) || t0.After(timeTarget.Add(tolerance)) {
+	timeTarget := time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond)
+	tolerance := time.Minute.Truncate(time.Millisecond)
+	low := timeTarget.Add(-1 * tolerance).Truncate(time.Millisecond)
+	high := timeTarget.Add(tolerance).Truncate(time.Millisecond)
+	if t0.Before(low) || t0.After(high) {
 		t.Fatalf("Expected the next scan to be in one hour (%s), got %s", timeTarget.String(), t0.String())
 	}
 	// Make sure the response mentions two skylinks.

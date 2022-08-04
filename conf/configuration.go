@@ -248,7 +248,7 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.
 	if errors.Contains(err, mongo.ErrNoDocuments) {
 		logger.Infof("Missing database value for '%s', setting a new one.", ConfNextScan)
 		// No scan has been scheduled. Schedule one in an hour.
-		scanTime := time.Now().Add(DefaultNextScanOffset).UTC()
+		scanTime := time.Now().UTC().Add(DefaultNextScanOffset).Truncate(time.Millisecond)
 		err = SetNextScan(ctx, db, scanTime)
 		if err != nil {
 			return time.Time{}, err
@@ -264,14 +264,14 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.
 		logger.Error(errMsg)
 		build.Critical(errors.AddContext(err, "potential programmer error"))
 		// The values in the database is unusable. Schedule a scan in an hour.
-		scanTime := time.Now().Add(DefaultNextScanOffset).UTC()
+		scanTime := time.Now().UTC().Add(DefaultNextScanOffset).Truncate(time.Millisecond)
 		err = SetNextScan(ctx, db, scanTime)
 		if err != nil {
 			return time.Time{}, err
 		}
 		return scanTime, nil
 	}
-	return t, nil
+	return t.UTC().Truncate(time.Millisecond), nil
 }
 
 // SetNextScan sets the time of the next cluster-wide scan for underpinned files.
