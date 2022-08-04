@@ -447,3 +447,94 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 		t.Fatalf("Expected to find '%s' among the skylinks pinned by this server, got '%v'", sl.String(), sls)
 	}
 }
+
+// TestEligibleToPin makes sure that we can follow our eligibility rules:
+// - always eligible if below the hard limit
+// - always eligible if last
+// - eligible if in the last X%
+func TestEligibleToPin(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+	t.Parallel()
+
+	ctx, cancel := test.Context()
+	defer cancel()
+	db, err := test.NewDatabase(ctx, t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := test.LoadTestConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	skydcm := skyd.NewSkydClientMock()
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
+
+	// Set the load levels for three other servers. The last one will be empty.
+	err1 := s.staticDB.SetServerLoad(ctx, "server1", 30*int64(AlwaysPinThreshold))
+	err2 := s.staticDB.SetServerLoad(ctx, "server2", 20*int64(AlwaysPinThreshold))
+	err3 := s.staticDB.SetServerLoad(ctx, "server3", 0)
+	if err = errors.Compose(err1, err2, err3); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check eligibility for a server that's not in the database.
+	// Expect an error.
+	_, err = s.staticEligibleToPin(ctx)
+	if !errors.Contains(err, database.ErrServerLoadNotFound) {
+		t.Fatalf("Expected '%v', got '%v'", database.ErrServerLoadNotFound, err)
+	}
+	// Set the server load level to a low level but not last.
+	// Bottom 50% but not bottom 30%. Still, below the hard limit, so we expect
+	// to be eligible.
+	err = s.staticDB.SetServerLoad(ctx, cfg.ServerName, int64(AlwaysPinThreshold)/2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligible, err := s.staticEligibleToPin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !eligible {
+		t.Fatal("Expected to be eligible, wasn't.")
+	}
+	// Set the load level above the hard limit and above 30%.
+	// Expect not eligible.
+	err = s.staticDB.SetServerLoad(ctx, cfg.ServerName, 3*int64(AlwaysPinThreshold))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligible, err = s.staticEligibleToPin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eligible {
+		t.Fatal("Expected to not be eligible, was.")
+	}
+	// Bump the load level of server3, so out current server is left last.
+	err = s.staticDB.SetServerLoad(ctx, "server3", 5*int64(AlwaysPinThreshold))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligible, err = s.staticEligibleToPin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !eligible {
+		t.Fatal("Expected to be eligible, wasn't.")
+	}
+	// Add one more server above our server, so we're not last but we're in the
+	// bottom 30%
+	err = s.staticDB.SetServerLoad(ctx, "server4", 6*int64(AlwaysPinThreshold))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligible, err = s.staticEligibleToPin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !eligible {
+		t.Fatal("Expected to be eligible, wasn't.")
+	}
+}

@@ -163,8 +163,9 @@ func (s *Scanner) threadedScanAndPin() {
 
 	// Main execution loop, goes on forever while the service is running.
 	for {
+		ctx := context.Background()
 		// Get the time of the next scan.
-		t, err := conf.NextScan(context.Background(), s.staticDB, s.staticLogger)
+		t, err := conf.NextScan(ctx, s.staticDB, s.staticLogger)
 		// On error, we'll sleep for half an hour and we'll try again.
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to fetch next scan time"))
@@ -186,6 +187,17 @@ func (s *Scanner) threadedScanAndPin() {
 		}
 		// Sleep until the scan time and then perform a scan.
 		time.Sleep(time.Now().UTC().Sub(t.UTC()))
+
+		// Check if this server is eligible to pin skylinks.
+		eligible, err := s.staticEligibleToPin(ctx)
+		if err != nil {
+			s.staticLogger.Warnf("Failed to determine if server is eligible to repin underpinned skylinks. Skipping repin. Error:: %v", err)
+			continue
+		}
+		if !eligible {
+			s.staticLogger.Debug("Server not eligible to repin underpinned skylinks. Skipping repin.")
+			continue
+		}
 
 		// Perform a scan:
 
@@ -411,6 +423,36 @@ func (s *Scanner) managedRefreshMinPinners() {
 	s.mu.Lock()
 	s.minPinners = mp
 	s.mu.Unlock()
+}
+
+// staticEligibleToPin returns true when this server is either pinning less than
+// AlwaysPinThreshold data or it's in the lower PinningRangeThresholdPercent
+// section of servers when ordered by contract data in descending order.
+// A server is always eligible if it's last in the list.
+func (s *Scanner) staticEligibleToPin(ctx context.Context) (bool, error) {
+	pinnedData, err := s.staticDB.ServerLoad(ctx, s.staticServerName)
+	if err != nil {
+		return false, err
+	}
+	// Below the hard limit.
+	if pinnedData < int64(AlwaysPinThreshold) {
+		return true, nil
+	}
+	pos, total, err := s.staticDB.ServerLoadPosition(ctx, s.staticServerName)
+	if err != nil {
+		return false, err
+	}
+	// Last in the list.
+	if pos == total {
+		return true, nil
+	}
+	// In the bottom PinningRangeThresholdPercent.
+	posPercent := 1.0 - float64(pos)/float64(total)
+	thresholdPercent := float64(PinningRangeThresholdPercent) / 100.0
+	if posPercent < thresholdPercent {
+		return true, nil
+	}
+	return false, nil
 }
 
 // staticWaitUntilHealthy blocks until the given skylinks becomes fully healthy
