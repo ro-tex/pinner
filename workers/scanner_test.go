@@ -2,6 +2,8 @@ package workers
 
 import (
 	"context"
+	"encoding/hex"
+	"gitlab.com/NebulousLabs/fastrand"
 	"testing"
 	"time"
 
@@ -537,4 +539,99 @@ func TestEligibleToPin(t *testing.T) {
 	if !eligible {
 		t.Fatal("Expected to be eligible, wasn't.")
 	}
+}
+
+// TestScannerObeysLimit ensures that the scanner won't try to pin underpinned
+// skylinks once the server is not eligible.
+func TestScannerObeysLimit(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+	t.Parallel()
+
+	ctx, cancel := test.Context()
+	defer cancel()
+	db, err := test.NewDatabase(ctx, t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := test.LoadTestConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	skydcm := skyd.NewSkydClientMock()
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
+	err = s.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// TEST: Eligible, expect to pin.
+	// We have just one server, so we're eligible.
+	err = db.SetServerLoad(ctx, cfg.ServerName, int64(AlwaysPinThreshold)/2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Add an underpinned skylink.
+	sl1, err := addUnderpinned(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait for the scanner to run and make sure we've pinned this skylink.
+	err = build.Retry(cyclesToWait, sleepBetweenScans, func() error {
+		// Make sure the skylink is pinned on the local (mock) skyd.
+		if !skydcm.IsPinning(sl1.String()) {
+			return errors.New("we expected skyd to be pinning this")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// TEST: Not eligible, expect not to pin.
+	// Add another server with zero load. Set our load to be above the hard
+	// limit. This will put us in the top 50%, so we should not pin.
+	// Set the load levels for four other servers. The last one will be empty.
+	err = s.staticDB.SetServerLoad(ctx, "server4", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.SetServerLoad(ctx, cfg.ServerName, 2*int64(AlwaysPinThreshold))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Add an underpinned skylink.
+	sl2, err := addUnderpinned(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait for the scanner to run and make sure we are not pinning this skylink.
+	expErr := errors.New("expected error")
+	err = build.Retry(cyclesToWait, sleepBetweenScans, func() error {
+		if !skydcm.IsPinning(sl2.String()) {
+			return expErr
+		}
+		return nil
+	})
+	if err != expErr {
+		t.Fatalf("Expected '%v', got '%v'", expErr, err)
+	}
+}
+
+// addUnderpinned is a helper that adds a random skylink to the DB and then
+// removes its pinner, so it becomes underpinned.
+func addUnderpinned(ctx context.Context, db *database.DB) (skymodules.Skylink, error) {
+	sl := test.RandomSkylink()
+	randSrv := hex.EncodeToString(fastrand.Bytes(16))
+	_, err := db.CreateSkylink(ctx, sl, randSrv)
+	if err != nil {
+		return skymodules.Skylink{}, err
+	}
+	// Make it underpinned.
+	err = db.RemoveServerFromSkylinks(ctx, []string{sl.String()}, randSrv)
+	if err != nil {
+		return skymodules.Skylink{}, err
+	}
+	return sl, nil
 }
