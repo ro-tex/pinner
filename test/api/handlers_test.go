@@ -26,7 +26,6 @@ func TestHandlers(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	t.Parallel()
 
 	tt, err := test.NewTester(t.Name())
 	if err != nil {
@@ -187,6 +186,8 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Set the next scan to be in 24 hours before removing the server.
+	err = conf.SetNextScan(tt.Ctx, tt.DB, time.Now().UTC().Add(24*time.Hour))
 	// Remove the server.
 	r, status, err = tt.ServerRemovePOST(server)
 	if err != nil || status != http.StatusOK {
