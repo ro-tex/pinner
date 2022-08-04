@@ -27,9 +27,10 @@ import (
 	- pin it locally and add the current server to its list
 	- unlock it
 
- PHASE 2: <TODO>
- - calculate server load by getting the total number and size of files pinned by each server
- - only pin underpinned files if the current server is in the lowest 20% of servers, otherwise exit before scanning further
+ PHASE 2: <DONE>
+ - calculate server load by getting the total size of files pinned by each server
+ - only pin underpinned files if the current server is in the lowest 30% of servers, otherwise exit before scanning further
+ - always pin if this server is lowest in the list (covers setups with up to 3 servers)
 
  PHASE 3: <TODO>
  - add a second scanner which looks for skylinks which should be unpinned and unpins them from the local skyd.
@@ -43,6 +44,19 @@ const (
 )
 
 var (
+	// AlwaysPinThreshold sets a limit on the contract data of the server. If
+	// the server is below that limit, it will repin underpinned files eve if it
+	// is not in the bottom X% in the cluster.
+	AlwaysPinThreshold = build.Select(
+		build.Var{
+			Standard: 50 * database.TiB,
+			Dev:      1 * database.MiB,
+			Testing:  1 * database.MiB,
+		}).(int)
+	// PinningRangeThresholdPercent defines the cutoff line in the list of
+	// servers, ordered by how much data they are pinning, below which a server
+	// will pin underpinned skylinks.
+	PinningRangeThresholdPercent = 30
 	// SleepBetweenPins defines how long we'll sleep between pinning files.
 	// We want to add this sleep in order to prevent a single server from
 	// grabbing all underpinned files and overloading itself. We also want to

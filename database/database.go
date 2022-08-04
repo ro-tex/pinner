@@ -30,6 +30,10 @@ var (
 	// collConfig defines the name of the collection which will hold the
 	// cluster-wide service configuration.
 	collConfig = "configuration"
+	// collServerLoad defines the name of the collection which will hold
+	// information about each server's load in terms of amount of data it's
+	// pinning
+	collServerLoad = "server_load"
 	// collSkylinks defines the name of the collection which will hold
 	// information about skylinks
 	collSkylinks = "skylinks"

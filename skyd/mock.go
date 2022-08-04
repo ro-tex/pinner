@@ -12,6 +12,7 @@ import (
 type (
 	// ClientMock is a mock of skyd.Client
 	ClientMock struct {
+		contractData   uint64
 		fileHealth     map[skymodules.SiaPath]float64
 		filesystemMock map[skymodules.SiaPath]rdReturnType
 		metadata       map[string]skymodules.SkyfileMetadata
@@ -39,6 +40,16 @@ func NewSkydClientMock() *ClientMock {
 		metadataErrors: make(map[string]error),
 		skylinks:       make(map[string]struct{}),
 	}
+}
+
+// ContractData returns the total data from Active and Passive contracts.
+func (c *ClientMock) ContractData() (uint64, error) {
+	return c.contractData, nil
+}
+
+// SetContractData sets the contract data value returned by the mock.
+func (c *ClientMock) SetContractData(n uint64) {
+	c.contractData = n
 }
 
 // DiffPinnedSkylinks is a carbon copy of PinnedSkylinksCache's version of the

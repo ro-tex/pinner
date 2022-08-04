@@ -22,6 +22,8 @@ var (
 type (
 	// Client describes the interface exposed by client.
 	Client interface {
+		// ContractData returns the total data from Active and Passive contracts.
+		ContractData() (uint64, error)
 		// DiffPinnedSkylinks returns two lists of skylinks - the ones that
 		// belong to the given list but are not pinned by skyd (unknown) and the
 		// ones that are pinned by skyd but are not on the list (missing).
@@ -66,6 +68,22 @@ func NewClient(host, port, password string, cache *PinnedSkylinksCache, logger l
 		staticLogger:        logger,
 		staticSkylinksCache: cache,
 	}
+}
+
+// ContractData returns the total data from Active and Passive contracts.
+func (c *client) ContractData() (uint64, error) {
+	rcs, err := c.staticClient.RenterContractsGet()
+	if err != nil {
+		return 0, err
+	}
+	data := uint64(0)
+	for _, ctr := range rcs.ActiveContracts {
+		data += ctr.Size
+	}
+	for _, ctr := range rcs.PassiveContracts {
+		data += ctr.Size
+	}
+	return data, nil
 }
 
 // DiffPinnedSkylinks returns two lists of skylinks - the ones that belong to
