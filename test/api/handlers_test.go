@@ -192,6 +192,11 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 	if err != nil || status != http.StatusOK {
 		t.Fatal(status, err)
 	}
+	// Make sure the server's load record is gone.
+	_, err = tt.DB.ServerLoad(tt.Ctx, server)
+	if !errors.Contains(err, database.ErrServerLoadNotFound) {
+		t.Fatalf("Expected '%v', got '%v'", database.ErrServerLoadNotFound, err)
+	}
 	// Make sure there's a scan scheduled for about an hour later.
 	t0, err := conf.NextScan(tt.Ctx, tt.DB, tt.Logger)
 	if err != nil {

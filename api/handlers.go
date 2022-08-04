@@ -119,12 +119,6 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 		api.WriteError(w, errors.New("no server found in request body"), http.StatusBadRequest)
 		return
 	}
-	// Remove the server as pinner.
-	n, err := api.staticDB.RemoveServer(req.Context(), body.Server)
-	if err != nil {
-		api.WriteError(w, errors.AddContext(err, "failed to remove server"), http.StatusInternalServerError)
-		return
-	}
 	// Schedule a scan for underpinned skylinks in an hour, so all of them can
 	// be repinned ASAP but also all servers in the cluster will have enough
 	// time to get the memo for the scan.
@@ -132,6 +126,18 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 	err = conf.SetNextScan(req.Context(), api.staticDB, t)
 	if err != nil {
 		api.WriteError(w, errors.AddContext(err, "failed to schedule a scan"), http.StatusInternalServerError)
+		return
+	}
+	// Remove the server as pinner.
+	n, err := api.staticDB.RemoveServer(req.Context(), body.Server)
+	if err != nil {
+		api.WriteError(w, errors.AddContext(err, "failed to remove server"), http.StatusInternalServerError)
+		return
+	}
+	// Remove the server's load.
+	err = api.staticDB.DeleteServerLoad(req.Context(), body.Server)
+	if err != nil {
+		api.WriteError(w, errors.AddContext(err, "failed to clean up server's load records"), http.StatusInternalServerError)
 		return
 	}
 	resp := ServerRemoveResponse{

@@ -86,4 +86,18 @@ func TestServerLoad(t *testing.T) {
 	if p2 != pos2 || total != 2 {
 		t.Fatalf("Expected position %d of %d, got %d of %d", pos2, 2, p2, total)
 	}
+	// Delete a non-existent server.
+	err = db.DeleteServerLoad(ctx, "non-existent")
+	if !errors.Contains(err, database.ErrServerLoadNotFound) {
+		t.Fatalf("Expected '%v', got '%v'", database.ErrServerLoadNotFound, err)
+	}
+	err = db.DeleteServerLoad(ctx, server1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make sure we can't fetch any data for it.
+	_, err = db.ServerLoad(ctx, server1)
+	if !errors.Contains(err, database.ErrServerLoadNotFound) {
+		t.Fatalf("Expected '%s', got '%v'", database.ErrServerLoadNotFound, err)
+	}
 }

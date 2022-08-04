@@ -14,6 +14,17 @@ var (
 	ErrServerLoadNotFound = errors.New("server load not found")
 )
 
+// DeleteServerLoad removes the load info for this server. We should use this
+// when we mark a server as dead.
+func (db *DB) DeleteServerLoad(ctx context.Context, server string) error {
+	filter := bson.M{"server_name": server}
+	dr, err := db.staticDB.Collection(collServerLoad).DeleteOne(ctx, filter)
+	if err == mongo.ErrNoDocuments || dr.DeletedCount == 0 {
+		return ErrServerLoadNotFound
+	}
+	return nil
+}
+
 // ServerLoad returns the server load stored in the database.
 func (db *DB) ServerLoad(ctx context.Context, server string) (int64, error) {
 	filter := bson.M{"server_name": server}
