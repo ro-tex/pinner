@@ -6,6 +6,7 @@ func (api *API) buildHTTPRoutes() {
 
 	api.staticRouter.POST("/pin", api.pinPOST)
 	api.staticRouter.POST("/unpin", api.unpinPOST)
+	api.staticRouter.POST("/server/remove", api.serverRemovePOST)
 	api.staticRouter.POST("/sweep", api.sweepPOST)
 	api.staticRouter.GET("/sweep/status", api.sweepStatusGET)
 }
