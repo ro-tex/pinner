@@ -119,24 +119,32 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 		api.WriteError(w, errors.New("no server found in request body"), http.StatusBadRequest)
 		return
 	}
-	// Schedule a scan for underpinned skylinks in an hour, so all of them can
-	// be repinned ASAP but also all servers in the cluster will have enough
-	// time to get the memo for the scan.
+	ctx := req.Context()
+	// Schedule a scan for underpinned skylinks in an hour (unless one is
+	// already pending), so all of them can be repinned ASAP but also all
+	// servers in the cluster will have enough time to get the memo for the scan.
 	t := time.Now().UTC().Add(time.Hour)
-	err = conf.SetNextScan(req.Context(), api.staticDB, t)
-	if err != nil {
-		api.WriteError(w, errors.AddContext(err, "failed to schedule a scan"), http.StatusInternalServerError)
-		return
+	t0, err := conf.NextScan(ctx, api.staticDB, api.staticLogger)
+	// We just set it when we encounter an error because we can get such an
+	// error in two cases - there is no next scan scheduled or there is a
+	// problem with the DB. In the first case we want to schedule one and in the
+	// second we'll get the error again with the next operation.
+	if err != nil || t0.After(t) {
+		err = conf.SetNextScan(ctx, api.staticDB, t)
+		if err != nil {
+			api.WriteError(w, errors.AddContext(err, "failed to schedule a scan"), http.StatusInternalServerError)
+			return
+		}
 	}
 	// Remove the server as pinner.
-	n, err := api.staticDB.RemoveServer(req.Context(), body.Server)
+	n, err := api.staticDB.RemoveServer(ctx, body.Server)
 	if err != nil {
 		api.WriteError(w, errors.AddContext(err, "failed to remove server"), http.StatusInternalServerError)
 		return
 	}
 	// Remove the server's load.
-	err = api.staticDB.DeleteServerLoad(req.Context(), body.Server)
-	if err != nil {
+	err = api.staticDB.DeleteServerLoad(ctx, body.Server)
+	if err != nil && !errors.Contains(err, database.ErrServerLoadNotFound) {
 		api.WriteError(w, errors.AddContext(err, "failed to clean up server's load records"), http.StatusInternalServerError)
 		return
 	}
