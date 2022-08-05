@@ -87,14 +87,6 @@ var (
 		Dev:      1 * time.Minute,
 		Testing:  500 * time.Millisecond,
 	}).(time.Duration)
-	// SleepBeforeForcedScan is used when we schedule a scan because something
-	// important happened with the cluster, i.e. a server was marked as dead or
-	// new empty servers were added and we want them to start repinning ASAP.
-	SleepBeforeForcedScan = build.Select(build.Var{
-		Standard: time.Hour,
-		Dev:      10 * time.Second,
-		Testing:  time.Second,
-	}).(time.Duration)
 	// sleepVariationFactor defines how much the sleep between scans will
 	// vary between executions. It represents percent.
 	sleepVariationFactor = 0.1

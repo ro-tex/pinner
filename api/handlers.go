@@ -2,14 +2,27 @@ package api
 
 import (
 	"encoding/json"
+	"gitlab.com/SkynetLabs/skyd/build"
+	"net/http"
+	"time"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
 	"github.com/skynetlabs/pinner/lib"
-	"github.com/skynetlabs/pinner/workers"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
-	"net/http"
+)
+
+var (
+	// SleepBeforeForcedScan is used when we schedule a scan because something
+	// important happened with the cluster, i.e. a server was marked as dead or
+	// new empty servers were added and we want them to start repinning ASAP.
+	SleepBeforeForcedScan = build.Select(build.Var{
+		Standard: time.Hour,
+		Dev:      10 * time.Second,
+		Testing:  time.Second,
+	}).(time.Duration)
 )
 
 type (
@@ -123,7 +136,7 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 	// Schedule a scan for underpinned skylinks in an hour (unless one is
 	// already pending), so all of them can be repinned ASAP but also all
 	// servers in the cluster will have enough time to get the memo for the scan.
-	t := lib.Now().Add(workers.SleepBeforeForcedScan)
+	t := lib.Now().Add(SleepBeforeForcedScan)
 	t0, err := conf.NextScan(ctx, api.staticDB, api.staticLogger)
 	// We just set it when we encounter an error because we can get such an
 	// error in two cases - there is no next scan scheduled or there is a
