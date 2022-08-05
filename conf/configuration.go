@@ -63,7 +63,7 @@ const (
 
 const (
 	// TimeFormat defines the time format we'll use throughout the service.
-	TimeFormat = time.RFC3339
+	TimeFormat = time.RFC3339Nano
 )
 
 var (

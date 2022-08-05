@@ -181,8 +181,7 @@ func testNextScan(t *testing.T, db *database.DB) {
 		t.Fatalf("Expected '%s', got '%s'", conf.ErrTimeTooSoon, err)
 	}
 	// Set a valid value.
-	// Truncate to second because RFC3339 doesn't represent less than that.
-	t1 := lib.Now().Add(time.Hour).Truncate(time.Second)
+	t1 := lib.Now().Add(time.Hour).Truncate(time.Millisecond)
 	err = conf.SetNextScan(ctx, db, t1)
 	if err != nil {
 		t.Fatal(err)
