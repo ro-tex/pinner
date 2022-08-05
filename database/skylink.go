@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"github.com/skynetlabs/pinner/lib"
 	"time"
 
 	"gitlab.com/NebulousLabs/errors"
@@ -197,13 +198,13 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, minPinn
 		// Unlocked.
 		"$or": bson.A{
 			bson.M{"lock_expires": bson.M{"$exists": false}},
-			bson.M{"lock_expires": bson.M{"$lt": time.Now().UTC().Truncate(time.Millisecond)}},
+			bson.M{"lock_expires": bson.M{"$lt": lib.Now()}},
 		},
 	}
 	update := bson.M{
 		"$set": bson.M{
 			"locked_by":    server,
-			"lock_expires": time.Now().UTC().Add(LockDuration).Truncate(time.Millisecond),
+			"lock_expires": lib.Now().Add(LockDuration),
 		},
 	}
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)

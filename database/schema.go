@@ -14,6 +14,22 @@ import (
 // databases and are iterating over the schema at the same time.
 func schema() map[string][]mongo.IndexModel {
 	return map[string][]mongo.IndexModel{
+		collConfig: {
+			{
+				Keys:    bson.D{{"key", 1}},
+				Options: options.Index().SetName("key").SetUnique(true),
+			},
+		},
+		collServerLoad: {
+			{
+				Keys:    bson.D{{"server_name", 1}},
+				Options: options.Index().SetName("server_name").SetUnique(true),
+			},
+			{
+				Keys:    bson.D{{"load", 1}},
+				Options: options.Index().SetName("load"),
+			},
+		},
 		collSkylinks: {
 			{
 				Keys:    bson.D{{"skylink", 1}},
@@ -34,12 +50,6 @@ func schema() map[string][]mongo.IndexModel {
 			{
 				Keys:    bson.D{{"pinned", 1}},
 				Options: options.Index().SetName("pinned"),
-			},
-		},
-		collConfig: {
-			{
-				Keys:    bson.D{{"key", 1}},
-				Options: options.Index().SetName("key").SetUnique(true),
 			},
 		},
 	}

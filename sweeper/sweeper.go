@@ -2,6 +2,7 @@ package sweeper
 
 import (
 	"context"
+	"github.com/skynetlabs/pinner/lib"
 	"time"
 
 	"github.com/skynetlabs/pinner/database"
@@ -88,7 +89,7 @@ func (s *Sweeper) threadedPerformSweep() {
 	// specific API call. Also, this operation can take a significant amount of
 	// time and we don't want it to fail because of a timeout.
 	ctx := context.Background()
-	dbCtx, cancel := context.WithDeadline(ctx, time.Now().UTC().Add(database.MongoDefaultTimeout))
+	dbCtx, cancel := context.WithDeadline(ctx, lib.Now().Add(database.MongoDefaultTimeout))
 	defer cancel()
 
 	// Get pinned skylinks from the DB

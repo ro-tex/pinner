@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"fmt"
+	"github.com/skynetlabs/pinner/lib"
 	"strings"
 	"sync"
 	"time"
@@ -27,9 +28,10 @@ import (
 	- pin it locally and add the current server to its list
 	- unlock it
 
- PHASE 2: <TODO>
- - calculate server load by getting the total number and size of files pinned by each server
- - only pin underpinned files if the current server is in the lowest 20% of servers, otherwise exit before scanning further
+ PHASE 2: <DONE>
+ - calculate server load by getting the total size of files pinned by each server
+ - only pin underpinned files if the current server is in the lowest 30% of servers, otherwise exit before scanning further
+ - always pin if this server is lowest in the list (covers setups with up to 3 servers)
 
  PHASE 3: <TODO>
  - add a second scanner which looks for skylinks which should be unpinned and unpins them from the local skyd.
@@ -43,6 +45,19 @@ const (
 )
 
 var (
+	// AlwaysPinThreshold sets a limit on the contract data of the server. If
+	// the server is below that limit, it will repin underpinned files even if it
+	// is not in the bottom X% in the cluster.
+	AlwaysPinThreshold = build.Select(
+		build.Var{
+			Standard: 50 * database.TiB,
+			Dev:      1 * database.MiB,
+			Testing:  1 * database.MiB,
+		}).(int)
+	// PinningRangeThresholdPercent defines the cutoff line in the list of
+	// servers, ordered by how much data they are pinning, below which a server
+	// will pin underpinned skylinks.
+	PinningRangeThresholdPercent = 0.30
 	// SleepBetweenPins defines how long we'll sleep between pinning files.
 	// We want to add this sleep in order to prevent a single server from
 	// grabbing all underpinned files and overloading itself. We also want to
@@ -70,7 +85,7 @@ var (
 		// de-sync the scan and the sweeps.
 		Standard: 19 * time.Hour,
 		Dev:      1 * time.Minute,
-		Testing:  300 * time.Millisecond,
+		Testing:  500 * time.Millisecond,
 	}).(time.Duration)
 	// sleepVariationFactor defines how much the sleep between scans will
 	// vary between executions. It represents percent.
@@ -149,8 +164,9 @@ func (s *Scanner) threadedScanAndPin() {
 
 	// Main execution loop, goes on forever while the service is running.
 	for {
+		ctx := context.Background()
 		// Get the time of the next scan.
-		t, err := conf.NextScan(context.Background(), s.staticDB, s.staticLogger)
+		t, err := conf.NextScan(ctx, s.staticDB, s.staticLogger)
 		// On error, we'll sleep for half an hour and we'll try again.
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to fetch next scan time"))
@@ -160,10 +176,18 @@ func (s *Scanner) threadedScanAndPin() {
 			}
 			continue
 		}
+		// Schedule a new scan if the time has passed. Round to seconds.
+		if t.Before(lib.Now().Truncate(time.Second)) {
+			stopped := s.staticScheduleNextScan()
+			if stopped {
+				return
+			}
+			continue
+		}
 		// If there is more than half an hour until the next scan, we'll sleep
 		// for half an hour and we'll check again. It's possible for the
 		// schedule to change in the meantime.
-		if t.UTC().After(time.Now().UTC().Add(conf.SleepBetweenChecksForScan)) {
+		if t.After(lib.Now().Add(conf.SleepBetweenChecksForScan)) {
 			stopped := s.staticSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return
@@ -171,7 +195,19 @@ func (s *Scanner) threadedScanAndPin() {
 			continue
 		}
 		// Sleep until the scan time and then perform a scan.
-		time.Sleep(time.Now().UTC().Sub(t.UTC()))
+		time.Sleep(t.Sub(lib.Now()))
+
+		// Check if this server is eligible to pin skylinks.
+
+		eligible, err := s.staticEligibleToPin(ctx)
+		if err != nil {
+			s.staticLogger.Warnf("Failed to determine if server is eligible to repin underpinned skylinks. Skipping repin. Error:: %v", err)
+			continue
+		}
+		if !eligible {
+			s.staticLogger.Debug("Server not eligible to repin underpinned skylinks. Skipping repin.")
+			continue
+		}
 
 		// Perform a scan:
 
@@ -218,9 +254,9 @@ func (s *Scanner) staticScheduleNextScan() bool {
 			continue
 		}
 		// Schedule the next scan time if the scheduled time is in the past.
-		if t.UTC().Before(time.Now().UTC()) {
+		if t.Before(lib.Now()) {
 			// Set the next scan to be after sleepBetweenScans.
-			err = conf.SetNextScan(context.Background(), s.staticDB, time.Now().UTC().Add(sleepBetweenScans))
+			err = conf.SetNextScan(context.Background(), s.staticDB, lib.Now().Add(sleepBetweenScans))
 			if err != nil {
 				// Log the error and sleep for half an hour. Meanwhile, another
 				// server will finish its scan and will set the next scan time.
@@ -397,6 +433,44 @@ func (s *Scanner) managedRefreshMinPinners() {
 	s.mu.Lock()
 	s.minPinners = mp
 	s.mu.Unlock()
+}
+
+// staticEligibleToPin returns true when this server is either pinning less than
+// AlwaysPinThreshold data or it's in the lower PinningRangeThresholdPercent
+// section of servers when ordered by contract data in descending order.
+// A server is always eligible if it's last in the list.
+func (s *Scanner) staticEligibleToPin(ctx context.Context) (bool, error) {
+	pinnedData, err := s.staticDB.ServerLoad(ctx, s.staticServerName)
+	if errors.Contains(err, database.ErrServerLoadNotFound) {
+		// We don't know what the server's load is. Get that data.
+		load, err := s.staticSkydClient.ContractData()
+		if err != nil {
+			return false, errors.AddContext(err, "failed to fetch server's load")
+		}
+		err = s.staticDB.SetServerLoad(ctx, s.staticServerName, int64(load))
+		if err != nil {
+			return false, errors.AddContext(err, "failed to set server's load")
+		}
+		pinnedData, err = s.staticDB.ServerLoad(ctx, s.staticServerName)
+	}
+	if err != nil {
+		return false, err
+	}
+	// Below the hard limit.
+	if pinnedData < int64(AlwaysPinThreshold) {
+		return true, nil
+	}
+	pos, total, err := s.staticDB.ServerLoadPosition(ctx, s.staticServerName)
+	if err != nil {
+		return false, err
+	}
+	// Last in the list.
+	if pos == total {
+		return true, nil
+	}
+	// In the bottom PinningRangeThresholdPercent.
+	posPercent := 1.0 - float64(pos)/float64(total)
+	return posPercent < PinningRangeThresholdPercent, nil
 }
 
 // staticWaitUntilHealthy blocks until the given skylinks becomes fully healthy

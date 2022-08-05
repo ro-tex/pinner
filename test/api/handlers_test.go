@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/skynetlabs/pinner/lib"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,7 +27,6 @@ func TestHandlers(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	t.Parallel()
 
 	tt, err := test.NewTester(t.Name())
 	if err != nil {
@@ -187,19 +187,28 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Set the next scan to be in 24 hours before removing the server.
+	err = conf.SetNextScan(tt.Ctx, tt.DB, lib.Now().Add(24*time.Hour))
 	// Remove the server.
 	r, status, err = tt.ServerRemovePOST(server)
 	if err != nil || status != http.StatusOK {
 		t.Fatal(status, err)
+	}
+	// Make sure the server's load record is gone.
+	_, err = tt.DB.ServerLoad(tt.Ctx, server)
+	if !errors.Contains(err, database.ErrServerLoadNotFound) {
+		t.Fatalf("Expected '%v', got '%v'", database.ErrServerLoadNotFound, err)
 	}
 	// Make sure there's a scan scheduled for about an hour later.
 	t0, err := conf.NextScan(tt.Ctx, tt.DB, tt.Logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	timeTarget := time.Now().UTC().Add(time.Hour)
-	tolerance := time.Minute
-	if t0.Before(timeTarget.Add(-1*tolerance)) || t0.After(timeTarget.Add(tolerance)) {
+	timeTarget := lib.Now().Add(time.Hour)
+	tolerance := time.Minute.Truncate(time.Millisecond)
+	low := timeTarget.Add(-1 * tolerance).Truncate(time.Millisecond)
+	high := timeTarget.Add(tolerance).Truncate(time.Millisecond)
+	if t0.Before(low) || t0.After(high) {
 		t.Fatalf("Expected the next scan to be in one hour (%s), got %s", timeTarget.String(), t0.String())
 	}
 	// Make sure the response mentions two skylinks.
@@ -259,7 +268,7 @@ func testHandlerSweep(t *testing.T, tt *test.Tester) {
 		t.Fatalf("Unexpected sweep detected: %+v", sweepStatus)
 	}
 	// Start a sweep. Expect to return immediately with a 202.
-	sweepReqTime := time.Now().UTC()
+	sweepReqTime := lib.Now()
 	sr, code, err := tt.SweepPOST()
 	if err != nil || code != http.StatusAccepted {
 		t.Fatalf("Unexpected status code or error: %d %+v", code, err)
@@ -270,7 +279,7 @@ func testHandlerSweep(t *testing.T, tt *test.Tester) {
 	// Make sure that the call returned quickly, i.e. it didn't wait for the
 	// sweep to end but rather returned immediately and let the sweep run in the
 	// background. Rebuilding the cache alone takes 100ms.
-	if time.Now().UTC().Add(-50 * time.Millisecond).After(sweepReqTime) {
+	if lib.Now().Add(-50 * time.Millisecond).After(sweepReqTime) {
 		t.Fatal("Call to status took too long.")
 	}
 	// Check status. Expect a sweep in progress.

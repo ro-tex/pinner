@@ -2,6 +2,7 @@ package sweeper
 
 import (
 	"github.com/sirupsen/logrus"
+	"github.com/skynetlabs/pinner/lib"
 	"gitlab.com/NebulousLabs/errors"
 	"io/ioutil"
 	"testing"
@@ -36,7 +37,7 @@ func TestStatus(t *testing.T) {
 	// Start and verify.
 	s.Start()
 	st = s.Status()
-	if !st.InProgress || st.StartTime.After(time.Now().UTC()) {
+	if !st.InProgress || st.StartTime.After(lib.Now()) {
 		t.Fatalf("Unexpected status: %+v", st)
 	}
 	// Store the start time and verify that attempting to start again will not
