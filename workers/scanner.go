@@ -46,7 +46,7 @@ const (
 
 var (
 	// AlwaysPinThreshold sets a limit on the contract data of the server. If
-	// the server is below that limit, it will repin underpinned files eve if it
+	// the server is below that limit, it will repin underpinned files even if it
 	// is not in the bottom X% in the cluster.
 	AlwaysPinThreshold = build.Select(
 		build.Var{
@@ -57,7 +57,7 @@ var (
 	// PinningRangeThresholdPercent defines the cutoff line in the list of
 	// servers, ordered by how much data they are pinning, below which a server
 	// will pin underpinned skylinks.
-	PinningRangeThresholdPercent = 30
+	PinningRangeThresholdPercent = 0.30
 	// SleepBetweenPins defines how long we'll sleep between pinning files.
 	// We want to add this sleep in order to prevent a single server from
 	// grabbing all underpinned files and overloading itself. We also want to
@@ -86,6 +86,14 @@ var (
 		Standard: 19 * time.Hour,
 		Dev:      1 * time.Minute,
 		Testing:  500 * time.Millisecond,
+	}).(time.Duration)
+	// SleepBeforeForcedScan is used when we schedule a scan because something
+	// important happened with the cluster, i.e. a server was marked as dead or
+	// new empty servers were added and we want them to start repinning ASAP.
+	SleepBeforeForcedScan = build.Select(build.Var{
+		Standard: time.Hour,
+		Dev:      10 * time.Second,
+		Testing:  time.Second,
 	}).(time.Duration)
 	// sleepVariationFactor defines how much the sleep between scans will
 	// vary between executions. It represents percent.
@@ -470,11 +478,7 @@ func (s *Scanner) staticEligibleToPin(ctx context.Context) (bool, error) {
 	}
 	// In the bottom PinningRangeThresholdPercent.
 	posPercent := 1.0 - float64(pos)/float64(total)
-	thresholdPercent := float64(PinningRangeThresholdPercent) / 100.0
-	if posPercent < thresholdPercent {
-		return true, nil
-	}
-	return false, nil
+	return posPercent < PinningRangeThresholdPercent, nil
 }
 
 // staticWaitUntilHealthy blocks until the given skylinks becomes fully healthy

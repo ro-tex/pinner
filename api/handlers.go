@@ -2,15 +2,14 @@ package api
 
 import (
 	"encoding/json"
-	"github.com/skynetlabs/pinner/lib"
-	"net/http"
-	"time"
-
 	"github.com/julienschmidt/httprouter"
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/lib"
+	"github.com/skynetlabs/pinner/workers"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
+	"net/http"
 )
 
 type (
@@ -124,15 +123,16 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 	// Schedule a scan for underpinned skylinks in an hour (unless one is
 	// already pending), so all of them can be repinned ASAP but also all
 	// servers in the cluster will have enough time to get the memo for the scan.
-	t := lib.Now().Add(time.Hour)
+	t := lib.Now().Add(workers.SleepBeforeForcedScan)
 	t0, err := conf.NextScan(ctx, api.staticDB, api.staticLogger)
 	// We just set it when we encounter an error because we can get such an
 	// error in two cases - there is no next scan scheduled or there is a
 	// problem with the DB. In the first case we want to schedule one and in the
 	// second we'll get the error again with the next operation.
 	if err != nil || t0.After(t) {
-		err = conf.SetNextScan(ctx, api.staticDB, t)
+		err1 := conf.SetNextScan(ctx, api.staticDB, t)
 		if err != nil {
+			err = errors.Compose(err1, errors.AddContext(err, "failed to fetch next scan"))
 			api.WriteError(w, errors.AddContext(err, "failed to schedule a scan"), http.StatusInternalServerError)
 			return
 		}
