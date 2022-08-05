@@ -1,6 +1,7 @@
 package sweeper
 
 import (
+	"github.com/skynetlabs/pinner/lib"
 	"github.com/skynetlabs/pinner/logger"
 	"sync"
 	"time"
@@ -36,7 +37,7 @@ func (st *status) Start() {
 	// Initialise the status to "a sweep is running".
 	st.status.InProgress = true
 	st.status.Error = nil
-	st.status.StartTime = time.Now().UTC()
+	st.status.StartTime = lib.Now()
 	st.status.EndTime = time.Time{}
 	st.mu.Unlock()
 	st.staticLogger.Info("Started a sweep.")
@@ -58,7 +59,7 @@ func (st *status) Finalize(err error) {
 		return
 	}
 	st.status.InProgress = false
-	st.status.EndTime = time.Now().UTC()
+	st.status.EndTime = lib.Now()
 	st.status.Error = err
 	st.mu.Unlock()
 	st.staticLogger.Info("Finalized a sweep.")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/lib"
 	"github.com/skynetlabs/pinner/test"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/NebulousLabs/fastrand"
@@ -169,19 +170,19 @@ func testNextScan(t *testing.T, db *database.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := lib.Now()
 	tolerance := 5 * time.Second
 	if t0.After(now.Add(tolerance)) || t0.Before(now.Add(-1*tolerance)) {
 		t.Fatalf("Expected roughly '%s', got '%s'", now.Add(conf.DefaultNextScanOffset), t0)
 	}
 	// Try to set an invalid value.
-	err = conf.SetNextScan(ctx, db, time.Now().UTC().Add(-1*time.Hour))
+	err = conf.SetNextScan(ctx, db, lib.Now().Add(-1*time.Hour))
 	if !errors.Contains(err, conf.ErrTimeTooSoon) {
 		t.Fatalf("Expected '%s', got '%s'", conf.ErrTimeTooSoon, err)
 	}
 	// Set a valid value.
 	// Truncate to second because RFC3339 doesn't represent less than that.
-	t1 := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	t1 := lib.Now().Add(time.Hour).Truncate(time.Second)
 	err = conf.SetNextScan(ctx, db, t1)
 	if err != nil {
 		t.Fatal(err)

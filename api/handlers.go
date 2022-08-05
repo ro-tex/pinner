@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/skynetlabs/pinner/lib"
 	"net/http"
 	"time"
 
@@ -123,7 +124,7 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 	// Schedule a scan for underpinned skylinks in an hour (unless one is
 	// already pending), so all of them can be repinned ASAP but also all
 	// servers in the cluster will have enough time to get the memo for the scan.
-	t := time.Now().UTC().Add(time.Hour)
+	t := lib.Now().Add(time.Hour)
 	t0, err := conf.NextScan(ctx, api.staticDB, api.staticLogger)
 	// We just set it when we encounter an error because we can get such an
 	// error in two cases - there is no next scan scheduled or there is a

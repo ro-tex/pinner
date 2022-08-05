@@ -3,6 +3,7 @@ package conf
 import (
 	"context"
 	"fmt"
+	"github.com/skynetlabs/pinner/lib"
 	"log"
 	"os"
 	"strconv"
@@ -248,7 +249,7 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.
 	if errors.Contains(err, mongo.ErrNoDocuments) {
 		logger.Infof("Missing database value for '%s', setting a new one.", ConfNextScan)
 		// No scan has been scheduled. Schedule one in an hour.
-		scanTime := time.Now().UTC().Add(DefaultNextScanOffset).Truncate(time.Millisecond)
+		scanTime := lib.Now().Add(DefaultNextScanOffset)
 		err = SetNextScan(ctx, db, scanTime)
 		if err != nil {
 			return time.Time{}, err
@@ -264,7 +265,7 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.
 		logger.Error(errMsg)
 		build.Critical(errors.AddContext(err, "potential programmer error"))
 		// The values in the database is unusable. Schedule a scan in an hour.
-		scanTime := time.Now().UTC().Add(DefaultNextScanOffset).Truncate(time.Millisecond)
+		scanTime := lib.Now().Add(DefaultNextScanOffset)
 		err = SetNextScan(ctx, db, scanTime)
 		if err != nil {
 			return time.Time{}, err
@@ -276,7 +277,7 @@ func NextScan(ctx context.Context, db *database.DB, logger logger.Logger) (time.
 
 // SetNextScan sets the time of the next cluster-wide scan for underpinned files.
 func SetNextScan(ctx context.Context, db *database.DB, t time.Time) error {
-	if t.Before(time.Now().UTC().Add(SleepBetweenChecksForScan)) {
+	if t.Before(lib.Now().Add(SleepBetweenChecksForScan)) {
 		return ErrTimeTooSoon
 	}
 	return db.SetConfigValue(ctx, ConfNextScan, t.UTC().Format(TimeFormat))
