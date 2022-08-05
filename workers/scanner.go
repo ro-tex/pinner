@@ -189,6 +189,7 @@ func (s *Scanner) threadedScanAndPin() {
 		time.Sleep(time.Now().UTC().Sub(t.UTC()))
 
 		// Check if this server is eligible to pin skylinks.
+
 		eligible, err := s.staticEligibleToPin(ctx)
 		if err != nil {
 			s.staticLogger.Warnf("Failed to determine if server is eligible to repin underpinned skylinks. Skipping repin. Error:: %v", err)
@@ -431,6 +432,18 @@ func (s *Scanner) managedRefreshMinPinners() {
 // A server is always eligible if it's last in the list.
 func (s *Scanner) staticEligibleToPin(ctx context.Context) (bool, error) {
 	pinnedData, err := s.staticDB.ServerLoad(ctx, s.staticServerName)
+	if errors.Contains(err, database.ErrServerLoadNotFound) {
+		// We don't know what the server's load is. Get that data.
+		load, err := s.staticSkydClient.ContractData()
+		if err != nil {
+			return false, errors.AddContext(err, "failed to fetch server's load")
+		}
+		err = s.staticDB.SetServerLoad(ctx, s.staticServerName, int64(load))
+		if err != nil {
+			return false, errors.AddContext(err, "failed to set server's load")
+		}
+		pinnedData, err = s.staticDB.ServerLoad(ctx, s.staticServerName)
+	}
 	if err != nil {
 		return false, err
 	}

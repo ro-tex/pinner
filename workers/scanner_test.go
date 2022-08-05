@@ -55,13 +55,13 @@ func TestScannerDryRun(t *testing.T) {
 	}
 	skydcm := skyd.NewSkydClientMock()
 	serverName := t.Name()
-	scanner := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, serverName, cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, serverName, cfg.SleepBetweenScans, skydcm)
 	defer func() {
-		if e := scanner.Close(); e != nil {
+		if e := s.Close(); e != nil {
 			t.Error(errors.AddContext(e, "failed to close threadgroup"))
 		}
 	}()
-	err = scanner.Start()
+	err = s.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestScannerDryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Sleep for a while, giving a chance to the scanner to pick the skylink up.
-	time.Sleep(cyclesToWait * scanner.SleepBetweenScans())
+	time.Sleep(cyclesToWait * s.SleepBetweenScans())
 	// Make sure the skylink isn't pinned on the local (mock) skyd.
 	if skydcm.IsPinning(sl.String()) {
 		t.Fatal("We didn't expect skyd to be pinning this.")
@@ -88,7 +88,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 
 	// Wait - the skylink should not be picked up and pinned on the local skyd.
-	time.Sleep(cyclesToWait * scanner.SleepBetweenScans())
+	time.Sleep(cyclesToWait * s.SleepBetweenScans())
 
 	// Verify skyd doesn't have the pin.
 	//
@@ -104,7 +104,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 
 	// Wait for the skylink should be picked up and pinned on the local skyd.
-	err = build.Retry(2*cyclesToWait, scanner.SleepBetweenScans(), func() error {
+	err = build.Retry(2*cyclesToWait, s.SleepBetweenScans(), func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl.String()) {
 			return errors.New("we expected skyd to be pinning this")
@@ -146,7 +146,7 @@ func TestScanner_calculateSleep(t *testing.T) {
 	}
 
 	skydMock := skyd.NewSkydClientMock()
-	scanner := Scanner{
+	s := Scanner{
 		staticSkydClient: skydMock,
 	}
 	skylink := test.RandomSkylink()
@@ -156,7 +156,7 @@ func TestScanner_calculateSleep(t *testing.T) {
 		meta := skymodules.SkyfileMetadata{Length: tt.dataSize}
 		skydMock.SetMetadata(skylink.String(), meta, nil)
 
-		sleep := scanner.staticEstimateTimeToFull(skylink)
+		sleep := s.staticEstimateTimeToFull(skylink)
 		if sleep != tt.expectedSleep {
 			t.Errorf("%s: expected %ds, got %ds", tname, tt.expectedSleep/time.Second, sleep/time.Second)
 		}
@@ -205,13 +205,13 @@ func curryTest(fn func(t *testing.T, db *database.DB, cfg conf.Config, skydcm *s
 
 // testBase ensures that Scanner works as expected in the general case.
 func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	scanner := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
 	defer func() {
-		if e := scanner.Close(); e != nil {
+		if e := s.Close(); e != nil {
 			t.Error(errors.AddContext(e, "failed to close threadgroup"))
 		}
 	}()
-	err := scanner.Start()
+	err := s.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 	}
 
 	// Sleep for a while, giving a chance to the scanner to pick the skylink up.
-	time.Sleep(cyclesToWait * scanner.SleepBetweenScans())
+	time.Sleep(cyclesToWait * s.SleepBetweenScans())
 	// Make sure the skylink isn't pinned on the local (mock) skyd.
 	if skydcm.IsPinning(sl.String()) {
 		t.Fatal("We didn't expect skyd to be pinning this.")
@@ -239,7 +239,7 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 	}
 
 	// Wait for the skylink should be picked up and pinned on the local skyd.
-	err = build.Retry(cyclesToWait, scanner.SleepBetweenScans(), func() error {
+	err = build.Retry(cyclesToWait, s.SleepBetweenScans(), func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl.String()) {
 			return errors.New("we expected skyd to be pinning this")
