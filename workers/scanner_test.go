@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"encoding/hex"
+	"github.com/skynetlabs/pinner/lib"
 	"gitlab.com/NebulousLabs/fastrand"
 	"testing"
 	"time"
@@ -56,15 +57,15 @@ func TestScannerDryRun(t *testing.T) {
 	skydcm := skyd.NewSkydClientMock()
 	serverName := t.Name()
 	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, serverName, cfg.SleepBetweenScans, skydcm)
+	err = s.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() {
 		if e := s.Close(); e != nil {
 			t.Error(errors.AddContext(e, "failed to close threadgroup"))
 		}
 	}()
-	err = s.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// Trigger a pin event.
 	//
@@ -104,7 +105,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 
 	// Wait for the skylink should be picked up and pinned on the local skyd.
-	err = build.Retry(2*cyclesToWait, s.SleepBetweenScans(), func() error {
+	err = build.Retry(3*cyclesToWait, s.SleepBetweenScans(), func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl.String()) {
 			return errors.New("we expected skyd to be pinning this")
@@ -163,8 +164,8 @@ func TestScanner_calculateSleep(t *testing.T) {
 	}
 }
 
-// TestScanner ensures that Scanner does its job.
-func TestScanner(t *testing.T) {
+// TestScannerSuite ensures that Scanner does its job.
+func TestScannerSuite(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
@@ -206,15 +207,15 @@ func curryTest(fn func(t *testing.T, db *database.DB, cfg conf.Config, skydcm *s
 // testBase ensures that Scanner works as expected in the general case.
 func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
 	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
+	err := s.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() {
 		if e := s.Close(); e != nil {
 			t.Error(errors.AddContext(e, "failed to close threadgroup"))
 		}
 	}()
-	err := s.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	ctx, cancel := test.Context()
 	defer cancel()
@@ -266,14 +267,14 @@ func testSleepForOrUntilStopped(t *testing.T, db *database.DB, cfg conf.Config, 
 		_ = s.Close()
 	}()
 	// Sleep for 100ms, expect to be stopped in 10ms.
-	t0 := time.Now().UTC()
+	t0 := lib.Now()
 	stopped = s.staticSleepForOrUntilStopped(100 * time.Millisecond)
 	if !stopped {
 		t.Fatal("Unexpected")
 	}
 	// Expect current time to be t0 + 10ms. Give 5ms tolerance.
-	if time.Now().UTC().After(t0.Add(15 * time.Millisecond)) {
-		t.Fatalf("Expected to sleep for about 10ms, slept for %d ms", time.Now().UTC().Sub(t0).Milliseconds())
+	if lib.Now().After(t0.Add(15 * time.Millisecond)) {
+		t.Fatalf("Expected to sleep for about 10ms, slept for %d ms", lib.Now().Sub(t0).Milliseconds())
 	}
 }
 
@@ -335,9 +336,9 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 
 	// Wait for the file to become healthy.
 	// Expect this to hit the deadline after 6s.
-	t0 := time.Now().UTC()
+	t0 := lib.Now()
 	s.staticWaitUntilHealthy(sl, sp)
-	t1 := time.Now().UTC()
+	t1 := lib.Now()
 	// Expect the time difference to be around 6s. Add 5ms tolerance.
 	if t0.Add(6*time.Second + 5*time.Millisecond).Before(t1) {
 		t.Fatalf("Expected to wait for 6s, waited for %d ms", t1.Sub(t0).Milliseconds())
@@ -348,9 +349,9 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 		time.Sleep(100 * time.Millisecond)
 		skydcm.SetHealth(sp, 0)
 	}()
-	t0 = time.Now().UTC()
+	t0 = lib.Now()
 	s.staticWaitUntilHealthy(sl, sp)
-	t1 = time.Now().UTC()
+	t1 = lib.Now()
 	// Expect the time difference to be around 100ms. Add 50ms tolerance.
 	if t0.Add(150 * time.Millisecond).Before(t1) {
 		t.Fatalf("Expected to wait for 100ms, waited for %d ms", t1.Sub(t0).Milliseconds())
@@ -358,9 +359,9 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 
 	// Set the metadata fetch to error out. Expect this to take ~2ms.
 	skydcm.SetMetadata(sl.String(), skymodules.SkyfileMetadata{}, errors.New("metadata error"))
-	t0 = time.Now().UTC()
+	t0 = lib.Now()
 	s.staticWaitUntilHealthy(sl, sp)
-	t1 = time.Now().UTC()
+	t1 = lib.Now()
 	// Expect the time difference to be around 2ms. Add 2ms tolerance.
 	if t0.Add(4 * time.Millisecond).Before(t1) {
 		t.Fatalf("Expected to wait for 2ms, waited for %d ms", t1.Sub(t0).Milliseconds())
@@ -565,6 +566,11 @@ func TestScannerObeysLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		if e := s.Close(); e != nil {
+			t.Error(errors.AddContext(e, "failed to close threadgroup"))
+		}
+	}()
 
 	// TEST: Eligible, expect to pin.
 	// We have just one server, so we're eligible.

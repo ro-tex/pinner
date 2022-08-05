@@ -3,6 +3,7 @@ package workers
 import (
 	"context"
 	"fmt"
+	"github.com/skynetlabs/pinner/lib"
 	"strings"
 	"sync"
 	"time"
@@ -84,7 +85,7 @@ var (
 		// de-sync the scan and the sweeps.
 		Standard: 19 * time.Hour,
 		Dev:      1 * time.Minute,
-		Testing:  300 * time.Millisecond,
+		Testing:  500 * time.Millisecond,
 	}).(time.Duration)
 	// sleepVariationFactor defines how much the sleep between scans will
 	// vary between executions. It represents percent.
@@ -175,10 +176,18 @@ func (s *Scanner) threadedScanAndPin() {
 			}
 			continue
 		}
+		// Schedule a new scan if the time has passed. Round to seconds.
+		if t.Before(lib.Now().Truncate(time.Second)) {
+			stopped := s.staticScheduleNextScan()
+			if stopped {
+				return
+			}
+			continue
+		}
 		// If there is more than half an hour until the next scan, we'll sleep
 		// for half an hour and we'll check again. It's possible for the
 		// schedule to change in the meantime.
-		if t.UTC().After(time.Now().UTC().Add(conf.SleepBetweenChecksForScan)) {
+		if t.After(lib.Now().Add(conf.SleepBetweenChecksForScan)) {
 			stopped := s.staticSleepForOrUntilStopped(conf.SleepBetweenChecksForScan)
 			if stopped {
 				return
@@ -186,7 +195,7 @@ func (s *Scanner) threadedScanAndPin() {
 			continue
 		}
 		// Sleep until the scan time and then perform a scan.
-		time.Sleep(time.Now().UTC().Sub(t.UTC()))
+		time.Sleep(t.Sub(lib.Now()))
 
 		// Check if this server is eligible to pin skylinks.
 
@@ -245,9 +254,9 @@ func (s *Scanner) staticScheduleNextScan() bool {
 			continue
 		}
 		// Schedule the next scan time if the scheduled time is in the past.
-		if t.UTC().Before(time.Now().UTC()) {
+		if t.Before(lib.Now()) {
 			// Set the next scan to be after sleepBetweenScans.
-			err = conf.SetNextScan(context.Background(), s.staticDB, time.Now().UTC().Add(sleepBetweenScans))
+			err = conf.SetNextScan(context.Background(), s.staticDB, lib.Now().Add(sleepBetweenScans))
 			if err != nil {
 				// Log the error and sleep for half an hour. Meanwhile, another
 				// server will finish its scan and will set the next scan time.
