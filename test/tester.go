@@ -154,6 +154,20 @@ func (t *Tester) HealthGET() (api.HealthGET, int, error) {
 	return resp, r.StatusCode, err
 }
 
+// ListServersGET lists all servers that pin a given skylink
+func (t *Tester) ListServersGET(skylink string) ([]string, int, error) {
+	var resp []string
+	r, err := t.Request(http.MethodGet, "/list/servers/"+skylink, nil, nil, nil, &resp)
+	return resp, r.StatusCode, err
+}
+
+// ListSkylinksGET lists all skylinks pinned by a given server.
+func (t *Tester) ListSkylinksGET(server string) ([]string, int, error) {
+	var resp []string
+	r, err := t.Request(http.MethodGet, "/list/skylinks/"+server, nil, nil, nil, &resp)
+	return resp, r.StatusCode, err
+}
+
 // PinPOST tells pinner that the current server is pinning a given skylink.
 func (t *Tester) PinPOST(sl string) (int, error) {
 	body, err := json.Marshal(api.SkylinkRequest{

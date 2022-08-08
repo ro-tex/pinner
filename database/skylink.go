@@ -236,7 +236,7 @@ func (db *DB) ServersForSkylink(ctx context.Context, skylink skymodules.Skylink)
 		return nil, sr.Err()
 	}
 	var result struct {
-		Servers []string
+		Servers []string `bson:"servers"`
 	}
 	err := sr.Decode(&result)
 	if err != nil {
@@ -251,14 +251,14 @@ func (db *DB) ServersForSkylink(ctx context.Context, skylink skymodules.Skylink)
 // knows of.
 func (db *DB) SkylinksForServer(ctx context.Context, server string) ([]string, error) {
 	c, err := db.staticDB.Collection(collSkylinks).Find(ctx, bson.M{"servers": server})
-	if errors.Contains(err, mongo.ErrNoDocuments) {
-		return []string{}, nil
-	}
 	if err != nil {
 		return nil, err
 	}
+	if c.RemainingBatchLength() == 0 {
+		return nil, mongo.ErrNoDocuments
+	}
 	var results []struct {
-		Skylink string
+		Skylink string `bson:"skylink"`
 	}
 	err = c.All(ctx, &results)
 	if err != nil {

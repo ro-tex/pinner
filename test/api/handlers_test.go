@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"github.com/skynetlabs/pinner/lib"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,8 +11,11 @@ import (
 
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/lib"
 	"github.com/skynetlabs/pinner/test"
 	"gitlab.com/NebulousLabs/errors"
+	"gitlab.com/NebulousLabs/fastrand"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // subtest defines the structure of a subtest
@@ -41,6 +44,8 @@ func TestHandlers(t *testing.T) {
 	// Specify subtests to run
 	tests := []subtest{
 		{name: "Health", test: testHandlerHealthGET},
+		{name: "ListServers", test: testHandlerListServersGET},
+		{name: "ListSkylinks", test: testHandlerListSkylinksGET},
 		{name: "Pin", test: testHandlerPinPOST},
 		{name: "Unpin", test: testHandlerUnpinPOST},
 		{name: "ServerRemove", test: testServerRemovePOST},
@@ -82,6 +87,62 @@ func testHandlerHealthGET(t *testing.T, tt *test.Tester) {
 	}
 	if status.MinPinners != newMinPinners {
 		t.Fatalf("Expected %d, got %d", newMinPinners, status.MinPinners)
+	}
+}
+
+// testHandlerListServersGET tests "GET /list/servers/:skylink"
+func testHandlerListServersGET(t *testing.T, tt *test.Tester) {
+	sl := test.RandomSkylink()
+	srv1 := "server1"
+	srv2 := "server2"
+	// List servers for non-existent skylink.
+	_, status, err := tt.ListServersGET(sl.String())
+	if status != http.StatusNotFound || (err != nil && !strings.Contains(err.Error(), database.ErrSkylinkNotExist.Error())) {
+		t.Fatalf("Expected %d '%v', got %d '%v'", http.StatusNotFound, database.ErrSkylinkNotExist, status, err)
+	}
+	// Add servers.
+	_, err = tt.DB.CreateSkylink(tt.Ctx, sl, srv1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tt.DB.AddServerForSkylinks(tt.Ctx, []string{sl.String()}, srv2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	servers, _, err := tt.ListServersGET(sl.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 2 || !test.Contains(servers, srv1) || !test.Contains(servers, srv2) {
+		t.Fatalf("Expected two servers, '%s' and '%s', got '%v'", srv1, srv2, servers)
+	}
+}
+
+// testHandlerListSkylinksGET tests "GET /list/skylinks/:server"
+func testHandlerListSkylinksGET(t *testing.T, tt *test.Tester) {
+	sl1 := test.RandomSkylink()
+	sl2 := test.RandomSkylink()
+	server := hex.EncodeToString(fastrand.Bytes(16))
+	// List skylinks for a non-existent server for non-existent skylink.
+	_, status, err := tt.ListSkylinksGET(server)
+	if status != http.StatusNotFound || (err != nil && !strings.Contains(err.Error(), mongo.ErrNoDocuments.Error())) {
+		t.Fatalf("Expected %d '%v', got %d '%v'", http.StatusNotFound, mongo.ErrNoDocuments, status, err)
+	}
+	// Add skylinks.
+	_, err = tt.DB.CreateSkylink(tt.Ctx, sl1, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tt.DB.CreateSkylink(tt.Ctx, sl2, server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skylinks, _, err := tt.ListSkylinksGET(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skylinks) != 2 || !test.Contains(skylinks, sl1.String()) || !test.Contains(skylinks, sl2.String()) {
+		t.Fatalf("Expected two skylinks, '%s' and '%s', got '%v'", sl1.String(), sl2.String(), skylinks)
 	}
 }
 
@@ -189,6 +250,9 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 	}
 	// Set the next scan to be in 24 hours before removing the server.
 	err = conf.SetNextScan(tt.Ctx, tt.DB, lib.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Remove the server.
 	r, status, err = tt.ServerRemovePOST(server)
 	if err != nil || status != http.StatusOK {

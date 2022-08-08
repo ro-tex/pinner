@@ -69,7 +69,7 @@ func (api *API) listServersGET(w http.ResponseWriter, req *http.Request, ps http
 		return
 	}
 	servers, err := api.staticDB.ServersForSkylink(req.Context(), sl)
-	if errors.Contains(err, database.ErrSkylinkExists) {
+	if errors.Contains(err, database.ErrSkylinkNotExist) {
 		api.WriteError(w, err, http.StatusNotFound)
 		return
 	}
