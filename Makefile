@@ -49,7 +49,7 @@ lint-ci:
 # revive is skipped on Windows.
 ifneq ("$(OS)","Windows_NT")
 # Linux
-	go install github.com/mgechev/revive@latest
+	go install github.com/mgechev/revive@v1.2.0
 	revive -set_exit_status $(pkgs)
 	go mod tidy
 endif

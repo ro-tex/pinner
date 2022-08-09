@@ -188,28 +188,48 @@ func testServerRemovePOST(t *testing.T, tt *test.Tester) {
 		t.Fatal(err)
 	}
 	// Set the next scan to be in 24 hours before removing the server.
-	err = conf.SetNextScan(tt.Ctx, tt.DB, lib.Now().Add(24*time.Hour))
+	t0 := lib.Now().Add(24 * time.Hour)
+	err = conf.SetNextScan(tt.Ctx, tt.DB, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make sure we set it right.
+	t1, err := conf.NextScan(tt.Ctx, tt.DB, tt.Logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if t0 != t1 {
+		t.Fatalf("Expected '%s', got '%s'", t0.String(), t1.String())
+	}
 	// Remove the server.
 	r, status, err = tt.ServerRemovePOST(server)
 	if err != nil || status != http.StatusOK {
 		t.Fatal(status, err)
 	}
+	// Make sure there's a scan scheduled for about a DefaultNextScanOffset
+	// later. Do this check ASAP after the removal or at least get the time
+	// target.
+	now := lib.Now()
+	timeTarget := now.Add(conf.DefaultNextScanOffset)
+	t2, err := conf.NextScan(tt.Ctx, tt.DB, tt.Logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This tolerance needs to be on the larger side because Mongo can be slow
+	// on a system under load and we don't want NDFs. Given that we set the next
+	// scan to be in 24h, we can afford to leave a lot of leeway here.
+	tolerance := 5 * time.Second
+	low := timeTarget.Add(-1 * tolerance)
+	high := timeTarget.Add(tolerance)
+	if t2.Before(low) || t2.After(high) {
+		t.Fatalf(
+			"Expected the next scan to be in %s (%s), got %s (%s)",
+			conf.DefaultNextScanOffset.String(), timeTarget.String(), t2.Sub(now).String(), t2.String())
+	}
 	// Make sure the server's load record is gone.
 	_, err = tt.DB.ServerLoad(tt.Ctx, server)
 	if !errors.Contains(err, database.ErrServerLoadNotFound) {
 		t.Fatalf("Expected '%v', got '%v'", database.ErrServerLoadNotFound, err)
-	}
-	// Make sure there's a scan scheduled for about an hour later.
-	t0, err := conf.NextScan(tt.Ctx, tt.DB, tt.Logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	timeTarget := lib.Now().Add(time.Hour)
-	tolerance := time.Minute.Truncate(time.Millisecond)
-	low := timeTarget.Add(-1 * tolerance).Truncate(time.Millisecond)
-	high := timeTarget.Add(tolerance).Truncate(time.Millisecond)
-	if t0.Before(low) || t0.After(high) {
-		t.Fatalf("Expected the next scan to be in one hour (%s), got %s", timeTarget.String(), t0.String())
 	}
 	// Make sure the response mentions two skylinks.
 	if r.NumSkylinks != 2 {

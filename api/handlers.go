@@ -2,9 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"gitlab.com/SkynetLabs/skyd/build"
 	"net/http"
-	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/skynetlabs/pinner/conf"
@@ -12,17 +10,6 @@ import (
 	"github.com/skynetlabs/pinner/lib"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
-)
-
-var (
-	// SleepBeforeForcedScan is used when we schedule a scan because something
-	// important happened with the cluster, i.e. a server was marked as dead or
-	// new empty servers were added and we want them to start repinning ASAP.
-	SleepBeforeForcedScan = build.Select(build.Var{
-		Standard: time.Hour,
-		Dev:      10 * time.Second,
-		Testing:  time.Second,
-	}).(time.Duration)
 )
 
 type (
@@ -136,15 +123,15 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 	// Schedule a scan for underpinned skylinks in an hour (unless one is
 	// already pending), so all of them can be repinned ASAP but also all
 	// servers in the cluster will have enough time to get the memo for the scan.
-	t := lib.Now().Add(SleepBeforeForcedScan)
-	t0, err := conf.NextScan(ctx, api.staticDB, api.staticLogger)
+	tNew := lib.Now().Add(conf.DefaultNextScanOffset)
+	tOld, err := conf.NextScan(ctx, api.staticDB, api.staticLogger)
 	// We just set it when we encounter an error because we can get such an
 	// error in two cases - there is no next scan scheduled or there is a
 	// problem with the DB. In the first case we want to schedule one and in the
 	// second we'll get the error again with the next operation.
-	if err != nil || t0.After(t) {
-		err1 := conf.SetNextScan(ctx, api.staticDB, t)
-		if err != nil {
+	if err != nil || tNew.Before(tOld) {
+		err1 := conf.SetNextScan(ctx, api.staticDB, tNew)
+		if err1 != nil {
 			err = errors.Compose(err1, errors.AddContext(err, "failed to fetch next scan"))
 			api.WriteError(w, errors.AddContext(err, "failed to schedule a scan"), http.StatusInternalServerError)
 			return
@@ -159,7 +146,7 @@ func (api *API) serverRemovePOST(w http.ResponseWriter, req *http.Request, _ htt
 	// Remove the server's load.
 	err = api.staticDB.DeleteServerLoad(ctx, body.Server)
 	if err != nil && !errors.Contains(err, database.ErrServerLoadNotFound) {
-		api.WriteError(w, errors.AddContext(err, "failed to clean up server's load records"), http.StatusInternalServerError)
+		api.WriteError(w, errors.AddContext(err, "failed to clean up server's load records, please retry"), http.StatusInternalServerError)
 		return
 	}
 	resp := ServerRemoveResponse{
