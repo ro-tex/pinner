@@ -80,6 +80,7 @@ var (
 
 	// sleepBetweenScans defines how often we'll scan the DB for underpinned
 	// skylinks.
+	// Needs to be at least twice as long as conf.SleepBetweenChecksForScan.
 	sleepBetweenScans = build.Select(build.Var{
 		// In production we want to use a prime number of hours, so we can
 		// de-sync the scan and the sweeps.
