@@ -6,6 +6,7 @@ import (
 	"github.com/skynetlabs/pinner/database"
 	"github.com/skynetlabs/pinner/test"
 	"gitlab.com/NebulousLabs/errors"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // TestSkylink is a comprehensive test suite that covers the base functionality
@@ -445,11 +446,8 @@ func TestSkylinksForServer(t *testing.T) {
 
 	// List all skylinks pinned by svr1. Expect an empty list.
 	ls, err := db.SkylinksForServer(ctx, srv1)
-	if err != nil {
+	if !errors.Contains(err, mongo.ErrNoDocuments) {
 		t.Fatal(err)
-	}
-	if len(ls) != 0 {
-		t.Fatalf("Expected empty list, got %d entries: %+v", len(ls), ls)
 	}
 	// Add a skylink.
 	_, err = db.CreateSkylink(ctx, sl1, srv1)
