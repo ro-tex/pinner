@@ -22,7 +22,7 @@ const (
 	// cyclesToWait establishes a common number of sleepBetweenScans cycles we
 	// should wait until we consider that a file has been or hasn't been picked
 	// by the scanner.
-	cyclesToWait = 5
+	cyclesToWait = 3
 )
 
 // TestScannerDryRun ensures that dry_run works as expected.
@@ -105,7 +105,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 
 	// Wait for the skylink should be picked up and pinned on the local skyd.
-	err = build.Retry(3*cyclesToWait, s.SleepBetweenScans(), func() error {
+	err = build.Retry(cyclesToWait, s.SleepBetweenScans(), func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl.String()) {
 			return errors.New("we expected skyd to be pinning this")

@@ -78,14 +78,11 @@ var (
 	ErrTimeTooSoon = errors.New("time is too soon")
 
 	// SleepBetweenChecksForScan defines how often we'll check the DB for
-	// the next scheduled scan. Changing this values will affect the values in
-	// conf.NextScan (when there isn't a scan scheduled we want to schedule it
-	// for after 2*SleepBetweenChecksForScan, so all servers have a chance to
-	// check and sync before we kick it off).
+	// the next scheduled scan.
 	SleepBetweenChecksForScan = build.Select(build.Var{
 		Standard: 30 * time.Minute,
 		Dev:      30 * time.Second,
-		Testing:  100 * time.Millisecond,
+		Testing:  time.Second,
 	}).(time.Duration)
 )
 

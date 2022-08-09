@@ -445,7 +445,7 @@ func TestSkylinksForServer(t *testing.T) {
 	srv2 := "server2"
 
 	// List all skylinks pinned by svr1. Expect an empty list.
-	ls, err := db.SkylinksForServer(ctx, srv1)
+	_, err = db.SkylinksForServer(ctx, srv1)
 	if !errors.Contains(err, mongo.ErrNoDocuments) {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestSkylinksForServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Make sure it shows up on the list.
-	ls, err = db.SkylinksForServer(ctx, srv1)
+	ls, err := db.SkylinksForServer(ctx, srv1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,12 +493,9 @@ func TestSkylinksForServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Expect an empty list for srv1.
-	ls, err = db.SkylinksForServer(ctx, srv1)
-	if err != nil {
+	_, err = db.SkylinksForServer(ctx, srv1)
+	if !errors.Contains(err, mongo.ErrNoDocuments) {
 		t.Fatal(err)
-	}
-	if len(ls) != 0 {
-		t.Fatalf("Expected empty list, got %d entries: %+v", len(ls), ls)
 	}
 	// Expect sl1 to still appear in the list of srv2.
 	ls, err = db.SkylinksForServer(ctx, srv2)
