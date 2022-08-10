@@ -10,6 +10,7 @@ import (
 	"github.com/skynetlabs/pinner/lib"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type (
@@ -45,6 +46,44 @@ func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter
 	status.DBAlive = err == nil
 	status.MinPinners = mp
 	api.WriteJSON(w, status)
+}
+
+// listServersGET returns the list of servers pinning a given skylink.
+func (api *API) listServersGET(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+	sl, err := database.SkylinkFromString(ps.ByName("skylink"))
+	if err != nil {
+		api.WriteError(w, errors.AddContext(err, database.ErrInvalidSkylink.Error()), http.StatusBadRequest)
+		return
+	}
+	servers, err := api.staticDB.ServersForSkylink(req.Context(), sl)
+	if errors.Contains(err, database.ErrSkylinkNotExist) {
+		api.WriteError(w, err, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		api.WriteError(w, err, http.StatusInternalServerError)
+		return
+	}
+	api.WriteJSON(w, servers)
+}
+
+// listSkylinksGET returns a list of skylinks pinned by the given server.
+func (api *API) listSkylinksGET(w http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+	server := ps.ByName("server")
+	if server == "" {
+		api.WriteError(w, errors.New("invalid server value"), http.StatusBadRequest)
+		return
+	}
+	sls, err := api.staticDB.SkylinksForServer(req.Context(), server)
+	if errors.Contains(err, mongo.ErrNoDocuments) {
+		api.WriteError(w, err, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		api.WriteError(w, err, http.StatusInternalServerError)
+		return
+	}
+	api.WriteJSON(w, sls)
 }
 
 // pinPOST informs pinner that a given skylink is pinned on the current server.

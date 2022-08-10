@@ -121,7 +121,7 @@ func (db *DB) MarkUnpinned(ctx context.Context, skylink skymodules.Skylink) erro
 // The `markPinned` flag sets the `unpin` field of a skylink to false when
 // raised but it doesn't set it to false when not raised. The reason for that is
 // that it accommodates a specific use case - adding a server to the list of
-// pinners of a given skylink will set the unpin field to false is we are doing
+// pinners of a given skylink will set the pinned field to true is we are doing
 // that because we know that a user is pinning it but not so if we are running
 // a server sweep and documenting which skylinks are pinned by this server.
 func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, server string, markPinned bool) error {
@@ -225,20 +225,40 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, minPinn
 	return SkylinkFromString(result.Skylink)
 }
 
+// ServersForSkylink returns a list of servers pinning the given skylink
+// according to the database.
+func (db *DB) ServersForSkylink(ctx context.Context, skylink skymodules.Skylink) ([]string, error) {
+	sr := db.staticDB.Collection(collSkylinks).FindOne(ctx, bson.M{"skylink": skylink.String()})
+	if sr.Err() == mongo.ErrNoDocuments {
+		return []string{}, ErrSkylinkNotExist
+	}
+	if sr.Err() != nil {
+		return nil, sr.Err()
+	}
+	var result struct {
+		Servers []string `bson:"servers"`
+	}
+	err := sr.Decode(&result)
+	if err != nil {
+		return nil, errors.AddContext(err, "failed to decode results")
+	}
+	return result.Servers, nil
+}
+
 // SkylinksForServer returns a list of skylinks pinned by the given server
 // according to the database. Note that this list doesn't necessarily match the
 // list of skylink the server is actually pinning, it's the list the database
 // knows of.
 func (db *DB) SkylinksForServer(ctx context.Context, server string) ([]string, error) {
 	c, err := db.staticDB.Collection(collSkylinks).Find(ctx, bson.M{"servers": server})
-	if errors.Contains(err, mongo.ErrNoDocuments) {
-		return []string{}, nil
-	}
 	if err != nil {
 		return nil, err
 	}
+	if c.RemainingBatchLength() == 0 {
+		return nil, mongo.ErrNoDocuments
+	}
 	var results []struct {
-		Skylink string
+		Skylink string `bson:"skylink"`
 	}
 	err = c.All(ctx, &results)
 	if err != nil {
