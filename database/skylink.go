@@ -144,7 +144,6 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 	} else {
 		update = bson.M{"$addToSet": bson.M{"servers": server}}
 	}
-	opts := options.Update().SetUpsert(true)
 
 	var sls []string
 	for len(skylinks) > 0 {
@@ -154,8 +153,23 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 			sls, skylinks = skylinks[:], []string{}
 		}
 
+		// Make sure the skylink records exist.
+		type simpleSkylinkRec struct {
+			Skylink string `bson:"skylink"`
+		}
+		recs := make([]interface{}, len(sls), len(sls))
+		for idx, sl := range sls {
+			recs[idx] = simpleSkylinkRec{Skylink: sl}
+		}
+		insOps := options.InsertMany().SetOrdered(false)
+		_, err := db.staticDB.Collection(collSkylinks).InsertMany(ctx, recs, insOps)
+		if err != nil && !mongo.IsDuplicateKeyError(err) {
+			return err
+		}
+
+		// Update the skylink records.
 		filter := bson.M{"skylink": bson.M{"$in": sls}}
-		_, err := db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update, opts)
+		_, err = db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update)
 		if err != nil {
 			db.staticLogger.Debugf("Failed to add server '%s' for skylinks '%v'. Error: '%v'", server, sls, err)
 			return err

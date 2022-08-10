@@ -181,6 +181,28 @@ func TestSkylink(t *testing.T) {
 	if !s1.Pinned {
 		t.Fatal("Expected the skylink to be pinned.")
 	}
+
+	// Add a server for non-existent skylinks.
+	sl3 := test.RandomSkylink()
+	sl4 := test.RandomSkylink()
+	err = db.AddServerForSkylinks(ctx, []string{sl3.String(), sl4.String()}, "new server pin true", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s3, err := db.FindSkylink(ctx, sl3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s3.Skylink != sl3.String() {
+		t.Fatal("Mismatch")
+	}
+	s4, err := db.FindSkylink(ctx, sl4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s4.Skylink != sl4.String() {
+		t.Fatal("Mismatch")
+	}
 }
 
 // TestFindAndLock tests the functionality of FindAndLockUnderpinned and
