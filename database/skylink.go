@@ -127,6 +127,9 @@ func (db *DB) MarkUnpinned(ctx context.Context, skylink skymodules.Skylink) erro
 func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, server string, markPinned bool) error {
 	db.staticLogger.Tracef("Entering AddServerForSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
 	defer db.staticLogger.Tracef("Exiting  AddServerForSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
+	if len(skylinks) == 0 {
+		return nil
+	}
 	filter := bson.M{"skylink": bson.M{"$in": skylinks}}
 	var update bson.M
 	if markPinned {
@@ -163,6 +166,9 @@ func (db *DB) RemoveServer(ctx context.Context, server string) (int64, error) {
 func (db *DB) RemoveServerFromSkylinks(ctx context.Context, skylinks []string, server string) error {
 	db.staticLogger.Tracef("Entering RemoveServerFromSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
 	defer db.staticLogger.Tracef("Exiting  RemoveServerFromSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
+	if len(skylinks) == 0 {
+		return nil
+	}
 	filter := bson.M{
 		"skylink": bson.M{"$in": skylinks},
 		"servers": server,
