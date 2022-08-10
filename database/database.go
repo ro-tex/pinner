@@ -56,6 +56,19 @@ type (
 		Host     string
 		Port     string
 	}
+
+	// Hello is a selection of the information returned by MongoDB as response
+	// to db.hello(), i.e. this is some basic information about the DB node.
+	Hello struct {
+		Hosts              []string  `bson:"hosts" json:"hosts"`
+		SetName            string    `bson:"setName" json:"setName"`
+		IsWriteablePrimary bool      `bson:"isWriteablePrimary" json:"isWriteablePrimary"`
+		Secondary          bool      `bson:"secondary" json:"secondary"`
+		Primary            string    `bson:"primary" json:"primary"`
+		Me                 string    `bson:"me" json:"me"`
+		LocalTime          time.Time `bson:"localTime" json:"localTime"`
+		OK                 float32   `bson:"ok" json:"OK"`
+	}
 )
 
 // New creates a new database connection.
@@ -121,12 +134,31 @@ func (db *DB) Disconnect(ctx context.Context) error {
 	return db.staticDB.Client().Disconnect(ctx)
 }
 
+// NumberSessionsInProgress returns the number of sessions that have been
+// started for this client but have not been closed (i.e. EndSession has not
+// been called).
+func (db *DB) NumberSessionsInProgress() int {
+	return db.staticDB.Client().NumberSessionsInProgress()
+}
+
 // Ping sends a ping command to verify that the client can connect to the DB and
 // specifically to the primary.
 func (db *DB) Ping(ctx context.Context) error {
-	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return db.staticDB.Client().Ping(ctx2, readpref.Primary())
+	return db.staticDB.Client().Ping(ctx, readpref.Primary())
+}
+
+// Hello returns some status information about the local DB node.
+func (db *DB) Hello(ctx context.Context) (*Hello, error) {
+	sr := db.staticDB.RunCommand(ctx, bson.M{"hello": 1})
+	if sr.Err() != nil {
+		return nil, sr.Err()
+	}
+	var res Hello
+	err := sr.Decode(&res)
+	if err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 // SetConfigValue updates a cluster-wide configuration value, stored in the

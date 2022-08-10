@@ -69,6 +69,7 @@ func testHandlerHealthGET(t *testing.T, tt *test.Tester) {
 	// DBAlive should never be false because if we couldn't reach the DB, we
 	// wouldn't have made it this far in the test.
 	if !status.DBAlive {
+		t.Log(status)
 		t.Fatal("DB down.")
 	}
 	if status.MinPinners != 1 {

@@ -26,8 +26,18 @@ type (
 	}
 	// HealthGET is the response type of GET /health
 	HealthGET struct {
-		DBAlive    bool `json:"dbAlive"`
-		MinPinners int  `json:"minPinners"`
+		DBAlive    bool   `json:"dbAlive"`
+		Error      string `json:"error"`
+		MinPinners int    `json:"minPinners"`
+		Primary    string `json:"primary,omitempty"`
+	}
+	// ExtendedHealth is a comprehensive set of information about the health
+	// of the DB node which includes some sensitive information. That's why we
+	// only log that data and we don't return it to callers.
+	ExtendedHealth struct {
+		Health                   HealthGET      `json:"health"`
+		Hello                    database.Hello `json:"hello"`
+		NumberSessionsInProgress int            `json:"numberSessionsInProgress"`
 	}
 	// SkylinkRequest describes a request that only provides a skylink.
 	SkylinkRequest struct {
@@ -41,10 +51,42 @@ type (
 
 // healthGET returns the status of the service
 func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
-	mp, err := conf.MinPinners(req.Context(), api.staticDB)
 	var status HealthGET
-	status.DBAlive = err == nil
+	err := api.staticDB.Ping(req.Context())
+	if err != nil {
+		status.DBAlive = false
+		status.Error = err.Error()
+		api.WriteJSON(w, status)
+		return
+	}
+	hello, err := api.staticDB.Hello(req.Context())
+	if err != nil {
+		status.Error = err.Error()
+		api.WriteJSON(w, status)
+		return
+	}
+
+	mp, err := conf.MinPinners(req.Context(), api.staticDB)
+	if err != nil {
+		status.Error = err.Error()
+		status.Primary = hello.Primary
+		api.WriteJSON(w, status)
+		return
+	}
 	status.MinPinners = mp
+
+	// Gather and log some extended health information.
+	extHealth := ExtendedHealth{
+		Health:                   status,
+		Hello:                    *hello,
+		NumberSessionsInProgress: api.staticDB.NumberSessionsInProgress(),
+	}
+	b, err := json.Marshal(extHealth)
+	if err != nil {
+		api.staticLogger.Warnf("Failed to serialize extended health information. Error: %v", err)
+	}
+	api.staticLogger.Info(string(b))
+
 	api.WriteJSON(w, status)
 }
 
