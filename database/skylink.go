@@ -157,6 +157,7 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 		filter := bson.M{"skylink": bson.M{"$in": sls}}
 		_, err := db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update, opts)
 		if err != nil {
+			db.staticLogger.Debugf("Failed to add server '%s' for skylinks '%v'. Error: '%v'", server, sls, err)
 			return err
 		}
 	}
