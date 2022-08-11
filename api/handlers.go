@@ -51,7 +51,9 @@ type (
 
 // healthGET returns the status of the service
 func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
-	var status HealthGET
+	status := HealthGET{
+		DBAlive: true,
+	}
 	err := api.staticDB.Ping(req.Context())
 	if err != nil {
 		status.DBAlive = false
