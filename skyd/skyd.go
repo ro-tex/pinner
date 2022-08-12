@@ -41,7 +41,7 @@ type (
 		// Pin instructs the local skyd to pin the given skylink.
 		Pin(skylink string) (skymodules.SiaPath, error)
 		// RebuildCache rebuilds the cache of skylinks pinned by the local skyd.
-		RebuildCache(omitBlockedSkylinks bool) RebuildCacheResult
+		RebuildCache() RebuildCacheResult
 		// RenterDirRootGet is a direct proxy to the skyd client method with the
 		// same name.
 		RenterDirRootGet(siaPath skymodules.SiaPath) (rd api.RenterDirectory, err error)
@@ -156,10 +156,10 @@ func (c *client) Pin(skylink string) (skymodules.SiaPath, error) {
 // excludes blocked skylinks. The rebuilding happens in a goroutine, allowing
 // the method to return a channel on which the caller can either wait or select.
 // The caller can check whether the rebuild was successful by calling Error().
-func (c *client) RebuildCache(omitBlockedSkylinks bool) RebuildCacheResult {
+func (c *client) RebuildCache() RebuildCacheResult {
 	c.staticLogger.Trace("Entering RebuildCache")
 	defer c.staticLogger.Trace("Exiting  RebuildCache")
-	return c.staticSkylinksCache.Rebuild(c, omitBlockedSkylinks)
+	return c.staticSkylinksCache.Rebuild(c)
 }
 
 // RenterDirRootGet is a direct proxy to skyd client's method.

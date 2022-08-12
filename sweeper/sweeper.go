@@ -83,7 +83,7 @@ func (s *Sweeper) threadedPerformSweep() {
 	// Kick off a skyd client cache rebuild. That happens in a separate
 	// goroutine. We'll block on the result channel only after we're done with
 	// the other tasks we can do while waiting.
-	res := s.staticSkydClient.RebuildCache(true)
+	res := s.staticSkydClient.RebuildCache()
 
 	// We use an independent context because we are not strictly bound to a
 	// specific API call. Also, this operation can take a significant amount of

@@ -136,7 +136,7 @@ func (c *ClientMock) Pin(skylink string) (skymodules.SiaPath, error) {
 }
 
 // RebuildCache is a noop mock that takes at least 100ms.
-func (c *ClientMock) RebuildCache(_ bool) RebuildCacheResult {
+func (c *ClientMock) RebuildCache() RebuildCacheResult {
 	closedCh := make(chan struct{})
 	close(closedCh)
 	// Do some work. There are tests which rely on this value being above 50ms.

@@ -213,7 +213,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// Perform a scan:
 
 		// Rebuild the cache and watch for service shutdown while doing that.
-		res := s.staticSkydClient.RebuildCache(true)
+		res := s.staticSkydClient.RebuildCache()
 		select {
 		case <-s.staticTG.StopChan():
 			return
@@ -329,10 +329,10 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	s.mu.Unlock()
 
 	ctx := context.TODO()
+
 	// skipSkylinks is a list of skylinks which we want to skip during this
 	// scan. These might be skylinks which errored out or blocked skylinks.
-	skipSkylinks := make([]string, 0)
-
+	var skipSkylinks []string
 	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, skipSkylinks, minPinners)
 	if database.IsNoSkylinksNeedPinning(err) {
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err

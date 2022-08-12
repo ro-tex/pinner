@@ -197,6 +197,9 @@ func (db *DB) RemoveServerFromSkylinks(ctx context.Context, skylinks []string, s
 //     ]
 // })
 func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSkylinks []string, minPinners int) (skymodules.Skylink, error) {
+	if skipSkylinks == nil {
+		skipSkylinks = make([]string, 0)
+	}
 	filter := bson.M{
 		// We use pinned != false because pinned == true is the default but it's
 		// possible that we've missed setting that somewhere.
@@ -206,7 +209,7 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSky
 		// Not pinned by the given server.
 		"servers": bson.M{"$nin": bson.A{server}},
 		// Skip all skylinks in the skipSkylinks list.
-		"skylink": bson.M{"$nin": bson.A{skipSkylinks}},
+		"skylink": bson.M{"$nin": skipSkylinks},
 		// Unlocked.
 		"$or": bson.A{
 			bson.M{"lock_expires": bson.M{"$exists": false}},
