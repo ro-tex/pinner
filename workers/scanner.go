@@ -213,7 +213,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// Perform a scan:
 
 		// Rebuild the cache and watch for service shutdown while doing that.
-		res := s.staticSkydClient.RebuildCache()
+		res := s.staticSkydClient.RebuildCache(true)
 		select {
 		case <-s.staticTG.StopChan():
 			return
@@ -301,6 +301,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 			s.staticWaitUntilHealthy(skylink, sp)
 			continue
 		}
+		s.staticLogger.Trace(err)
 		// In case of error we still want to sleep for a moment in order to
 		// avoid a tight(ish) loop of errors when we either fail to pin or
 		// fail to mark as pinned. Note that this only happens when we want
@@ -327,7 +328,9 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	minPinners := s.minPinners
 	s.mu.Unlock()
 
-	sl, err := s.staticDB.FindAndLockUnderpinned(context.TODO(), s.staticServerName, minPinners)
+	ctx := context.TODO()
+
+	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, minPinners)
 	if database.IsNoSkylinksNeedPinning(err) {
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
@@ -336,7 +339,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
 	defer func() {
-		err = s.staticDB.UnlockSkylink(context.TODO(), sl, s.staticServerName)
+		err = s.staticDB.UnlockSkylink(ctx, sl, s.staticServerName)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to unlock skylink after trying to pin it"))
 		}
@@ -352,10 +355,17 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	if errors.Contains(err, skyd.ErrSkylinkAlreadyPinned) {
 		s.staticLogger.Info(err)
 		// The skylink is already pinned locally but it's not marked as such.
-		err = s.staticDB.AddServerForSkylinks(context.TODO(), []string{sl.String()}, s.staticServerName, false)
+		err = s.staticDB.AddServerForSkylinks(ctx, []string{sl.String()}, s.staticServerName, false)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
 		}
+		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
+	}
+	if errors.Contains(err, skyd.ErrSkylinkIsBlocked) {
+		s.staticLogger.Info(err)
+		// The skylink is blocked by skyd. We'll remove it from the database, so
+		// no other server will try to repin it.
+		err = s.staticDB.DeleteSkylink(ctx, sl)
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
 	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") ||
@@ -371,7 +381,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
 	s.staticLogger.Infof("Successfully pinned '%s'", sl)
-	err = s.staticDB.AddServerForSkylinks(context.TODO(), []string{sl.String()}, s.staticServerName, false)
+	err = s.staticDB.AddServerForSkylinks(ctx, []string{sl.String()}, s.staticServerName, false)
 	if err != nil {
 		s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
 	}

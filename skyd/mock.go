@@ -42,6 +42,11 @@ func NewSkydClientMock() *ClientMock {
 	}
 }
 
+// Blocklist gets the list of blocked skylinks. Noop.
+func (c *ClientMock) Blocklist() (blocklist api.SkynetBlocklistGET, err error) {
+	return api.SkynetBlocklistGET{}, nil
+}
+
 // ContractData returns the total data from Active and Passive contracts.
 func (c *ClientMock) ContractData() (uint64, error) {
 	c.mu.Lock()
@@ -128,7 +133,7 @@ func (c *ClientMock) Pin(skylink string) (skymodules.SiaPath, error) {
 }
 
 // RebuildCache is a noop mock that takes at least 100ms.
-func (c *ClientMock) RebuildCache() RebuildCacheResult {
+func (c *ClientMock) RebuildCache(_ bool) RebuildCacheResult {
 	closedCh := make(chan struct{})
 	close(closedCh)
 	// Do some work. There are tests which rely on this value being above 50ms.

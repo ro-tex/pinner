@@ -73,6 +73,16 @@ func (db *DB) CreateSkylink(ctx context.Context, skylink skymodules.Skylink, ser
 	return s, nil
 }
 
+// DeleteSkylink removes the skylink from the database.
+func (db *DB) DeleteSkylink(ctx context.Context, skylink skymodules.Skylink) error {
+	filter := bson.M{"skylink": skylink.String()}
+	dr, err := db.staticDB.Collection(collSkylinks).DeleteOne(ctx, filter)
+	if err == mongo.ErrNoDocuments || dr.DeletedCount == 0 {
+		return ErrSkylinkNotExist
+	}
+	return nil
+}
+
 // FindSkylink fetches a skylink from the DB.
 func (db *DB) FindSkylink(ctx context.Context, skylink skymodules.Skylink) (Skylink, error) {
 	sr := db.staticDB.Collection(collSkylinks).FindOne(ctx, bson.M{"skylink": skylink.String()})

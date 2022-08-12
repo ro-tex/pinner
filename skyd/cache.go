@@ -1,6 +1,7 @@
 package skyd
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 
@@ -92,13 +93,13 @@ func (psc *PinnedSkylinksCache) Diff(sls []string) (unknown []string, missing []
 // rebuilding happens in a goroutine, allowing the method to return a channel
 // on which the caller can either wait or select. The caller can check whether
 // the rebuild was successful by calling Error().
-func (psc *PinnedSkylinksCache) Rebuild(skydClient Client) RebuildCacheResult {
+func (psc *PinnedSkylinksCache) Rebuild(skydClient Client, omitBlockedSkylinks bool) RebuildCacheResult {
 	psc.mu.Lock()
 	defer psc.mu.Unlock()
 	if !psc.isRebuildInProgress() {
 		psc.result = NewRebuildCacheResult()
 		// Kick off the actual rebuild in a separate goroutine.
-		go psc.threadedRebuild(skydClient)
+		go psc.threadedRebuild(skydClient, omitBlockedSkylinks)
 	}
 	return *psc.result
 }
@@ -121,7 +122,7 @@ func (psc *PinnedSkylinksCache) isRebuildInProgress() bool {
 // threadedRebuild performs the actual cache rebuild process. It reports any
 // errors by setting the psc.err variable and it always closes the rebuildCh on
 // exit.
-func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
+func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client, omitBlockedSkylinks bool) {
 	var err error
 	// Ensure that we properly wrap up the rebuild process.
 	defer func() {
@@ -160,6 +161,33 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 		// Skip the first element because that's current directory.
 		for i := 1; i < len(rd.Directories); i++ {
 			dirsToWalk = append(dirsToWalk, rd.Directories[i].SiaPath)
+		}
+	}
+
+	// If omitBlockedSkylinks is true we'll check all skylinks against the list
+	// of blocked skylinks in skyd and we'll remove the blocked ones from the
+	// cache.
+	if omitBlockedSkylinks {
+		blocklist, err := skydClient.Blocklist()
+		if err != nil {
+			err = errors.AddContext(err, "failed to fetch blocklist")
+			return
+		}
+		var sl skymodules.Skylink
+		for s := range sls {
+			err = sl.LoadString(s)
+			if err != nil {
+				// This is an invalid skylink, remove it.
+				delete(sls, s)
+			}
+			for _, bl := range blocklist.Blocklist {
+				mr := sl.MerkleRoot()
+				if bytes.Equal(bl[:], mr[:]) {
+					// This skylink is blocked. Remove it from the list.
+					delete(sls, s)
+					break
+				}
+			}
 		}
 	}
 
