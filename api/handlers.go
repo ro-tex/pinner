@@ -28,7 +28,7 @@ type (
 	// Primary field is only populated on error.
 	HealthGET struct {
 		DBAlive    bool   `json:"dbAlive"`
-		Error      string `json:"error"`
+		Error      error  `json:"error,omitempty"`
 		MinPinners int    `json:"minPinners"`
 		Primary    string `json:"primary,omitempty"`
 	}
@@ -71,29 +71,29 @@ func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter
 		}
 		api.staticLogger.Info(string(b))
 	}()
+
 	err := api.staticDB.Ping(req.Context())
 	if err != nil {
 		status.DBAlive = false
-		status.Error = err.Error()
-		api.WriteJSON(w, status)
-		return
+		status.Error = errors.Compose(status.Error, err)
 	}
 	hello, err := api.staticDB.Hello(req.Context())
 	if err != nil {
-		status.Error = err.Error()
-		api.WriteJSON(w, status)
-		return
+		status.Error = errors.Compose(status.Error, err)
+	} else {
+		extHealth.Hello = hello
 	}
-	extHealth.Hello = hello
 
 	mp, err := conf.MinPinners(req.Context(), api.staticDB)
 	if err != nil {
-		status.Error = err.Error()
-		status.Primary = hello.Primary
-		api.WriteJSON(w, status)
-		return
+		status.Error = errors.Compose(status.Error, err)
+		if hello != nil {
+			status.Primary = hello.Primary
+		}
+	} else {
+		status.MinPinners = mp
 	}
-	status.MinPinners = mp
+
 	api.WriteJSON(w, status)
 }
 
