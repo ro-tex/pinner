@@ -329,8 +329,11 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	s.mu.Unlock()
 
 	ctx := context.TODO()
+	// skipSkylinks is a list of skylinks which we want to skip during this
+	// scan. These might be skylinks which errored out or blocked skylinks.
+	skipSkylinks := make([]string, 0)
 
-	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, minPinners)
+	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, skipSkylinks, minPinners)
 	if database.IsNoSkylinksNeedPinning(err) {
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
@@ -355,6 +358,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	if errors.Contains(err, skyd.ErrSkylinkAlreadyPinned) {
 		s.staticLogger.Info(err)
 		// The skylink is already pinned locally but it's not marked as such.
+		skipSkylinks = append(skipSkylinks, sl.String())
 		err = s.staticDB.AddServerForSkylinks(ctx, []string{sl.String()}, s.staticServerName, false)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
@@ -363,19 +367,20 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	}
 	if errors.Contains(err, skyd.ErrSkylinkIsBlocked) {
 		s.staticLogger.Info(err)
+		skipSkylinks = append(skipSkylinks, sl.String())
 		// The skylink is blocked by skyd. We'll remove it from the database, so
 		// no other server will try to repin it.
 		err = s.staticDB.DeleteSkylink(ctx, sl)
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
-	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") ||
-		strings.Contains(err.Error(), "connect: connection refused")) {
+	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") || strings.Contains(err.Error(), "connect: connection refused")) {
 		err = errors.AddContext(err, fmt.Sprintf("unrecoverable error while pinning '%s'", sl))
 		s.staticLogger.Error(err)
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
 	if err != nil {
 		s.staticLogger.Warn(errors.AddContext(err, fmt.Sprintf("failed to pin '%s'", sl)))
+		skipSkylinks = append(skipSkylinks, sl.String())
 		// Since this is not an unrecoverable error, we'll signal the caller to
 		// continue trying to pin other skylinks.
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err

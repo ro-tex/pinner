@@ -55,7 +55,7 @@ func TestCacheRebuild(t *testing.T) {
 	c.Add(sl)
 	skyd := NewSkydClientMock()
 	sls := skyd.MockFilesystem()
-	rr := c.Rebuild(skyd)
+	rr := c.Rebuild(skyd, true)
 	// Wait for the rebuild to finish.
 	<-rr.ErrAvail
 	if rr.ExternErr != nil {
