@@ -12,6 +12,7 @@ import (
 type (
 	// ClientMock is a mock of skyd.Client
 	ClientMock struct {
+		blocklist      api.SkynetBlocklistGET
 		contractData   uint64
 		fileHealth     map[skymodules.SiaPath]float64
 		filesystemMock map[skymodules.SiaPath]rdReturnType
@@ -44,7 +45,9 @@ func NewSkydClientMock() *ClientMock {
 
 // Blocklist gets the list of blocked skylinks. Noop.
 func (c *ClientMock) Blocklist() (blocklist api.SkynetBlocklistGET, err error) {
-	return api.SkynetBlocklistGET{}, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.blocklist, nil
 }
 
 // ContractData returns the total data from Active and Passive contracts.
@@ -154,6 +157,13 @@ func (c *ClientMock) RenterDirRootGet(siaPath skymodules.SiaPath) (rd api.Renter
 		return api.RenterDirectory{}, errors.New("siapath does not exist")
 	}
 	return r.RD, r.Err
+}
+
+// SetBlocklist allows us to set the blocklist.
+func (c *ClientMock) SetBlocklist(bl api.SkynetBlocklistGET) {
+	c.mu.Lock()
+	c.blocklist = bl
+	c.mu.Unlock()
 }
 
 // SetHealth allows us to set the health of a sia file.

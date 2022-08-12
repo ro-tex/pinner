@@ -181,6 +181,15 @@ func TestSkylink(t *testing.T) {
 	if !s1.Pinned {
 		t.Fatal("Expected the skylink to be pinned.")
 	}
+	// Delete the skylink.
+	err = db.DeleteSkylink(ctx, sl1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s1, err = db.FindSkylink(ctx, sl1)
+	if !errors.Contains(err, database.ErrSkylinkNotExist) {
+		t.Fatalf("Expected error %v, got %v.", database.ErrSkylinkNotExist, err)
+	}
 }
 
 // TestFindAndLock tests the functionality of FindAndLockUnderpinned and

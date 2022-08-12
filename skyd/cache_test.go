@@ -1,6 +1,9 @@
 package skyd
 
 import (
+	"gitlab.com/SkynetLabs/skyd/node/api"
+	"gitlab.com/SkynetLabs/skyd/skymodules"
+	"go.sia.tech/siad/crypto"
 	"testing"
 )
 
@@ -50,10 +53,23 @@ func TestCacheRebuild(t *testing.T) {
 
 	sl := "XX_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg"
 
+	// This skylink exists on the mock filesystem.
+	slBlocked := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B"
+	var slbl skymodules.Skylink
+	err := slbl.LoadString(slBlocked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Add the blocked skylink to a blocklist.
+	blocklist := api.SkynetBlocklistGET{
+		Blocklist: []crypto.Hash{slbl.MerkleRoot()},
+	}
+
 	c := NewCache()
 	// Add a skylink to the cache. Expect this to be gone after the rebuild.
 	c.Add(sl)
 	skyd := NewSkydClientMock()
+	skyd.SetBlocklist(blocklist)
 	sls := skyd.MockFilesystem()
 	rr := c.Rebuild(skyd, true)
 	// Wait for the rebuild to finish.
@@ -61,9 +77,13 @@ func TestCacheRebuild(t *testing.T) {
 	if rr.ExternErr != nil {
 		t.Fatal(rr.ExternErr)
 	}
+	// Ensure that the blocked skylink is not in the cache.
+	if c.Contains(slBlocked) {
+		t.Fatalf("Expected blocked skylink '%s' to not be present after the rebuild.", sl)
+	}
 	// Ensure that all expected skylinks are in the cache now.
 	for _, s := range sls {
-		if !c.Contains(s) {
+		if s != slBlocked && !c.Contains(s) {
 			t.Fatalf("Expected skylink '%s' to be in the cache.", s)
 		}
 	}
