@@ -43,6 +43,11 @@ var (
 )
 
 type (
+	// SkylinkOnly is a helper type which we can use when we want to grab a
+	// skylink from the DB.s
+	SkylinkOnly struct {
+		Skylink string `bson:"skylink"`
+	}
 	// Skylink represents a skylink object in the DB.
 	Skylink struct {
 		ID      primitive.ObjectID `bson:"_id,omitempty"`
@@ -154,12 +159,9 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 		}
 
 		// Make sure the skylink records exist.
-		type simpleSkylinkRec struct {
-			Skylink string `bson:"skylink"`
-		}
 		recs := make([]interface{}, len(sls), len(sls))
 		for idx, sl := range sls {
-			recs[idx] = simpleSkylinkRec{Skylink: sl}
+			recs[idx] = SkylinkOnly{Skylink: sl}
 		}
 		insOps := options.InsertMany().SetOrdered(false)
 		_, err := db.staticDB.Collection(collSkylinks).InsertMany(ctx, recs, insOps)
@@ -169,6 +171,7 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 
 		// Update the skylink records.
 		filter := bson.M{"skylink": bson.M{"$in": sls}}
+		opts := options.Update().Set
 		_, err = db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update)
 		if err != nil {
 			db.staticLogger.Debugf("Failed to add server '%s' for skylinks '%v'. Error: '%v'", server, sls, err)
@@ -264,9 +267,7 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, minPinn
 	if sr.Err() != nil {
 		return skymodules.Skylink{}, sr.Err()
 	}
-	var result struct {
-		Skylink string
-	}
+	var result SkylinkOnly
 	err := sr.Decode(&result)
 	if err != nil {
 		return skymodules.Skylink{}, errors.AddContext(err, "failed to decode result")
@@ -306,9 +307,7 @@ func (db *DB) SkylinksForServer(ctx context.Context, server string) ([]string, e
 	if c.RemainingBatchLength() == 0 {
 		return nil, mongo.ErrNoDocuments
 	}
-	var results []struct {
-		Skylink string `bson:"skylink"`
-	}
+	var results []SkylinkOnly
 	err = c.All(ctx, &results)
 	if err != nil {
 		return nil, errors.AddContext(err, "failed to decode results")
