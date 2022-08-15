@@ -87,6 +87,10 @@ func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter
 	mp, err := conf.MinPinners(req.Context(), api.staticDB)
 	if err != nil {
 		status.Error = errors.Compose(status.Error, err)
+		// Since an error has occurred, we want to add MongoDB's primary to
+		// the health status. We do not include this information with each call
+		// to health because it gives important information to potential
+		// attackers.
 		if hello != nil {
 			status.Primary = hello.Primary
 		}

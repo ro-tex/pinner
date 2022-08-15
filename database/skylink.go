@@ -13,6 +13,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+const (
+	// maxNumSkylinksToProcess defines the maximum number of skylinks we want to
+	// process in one batch. We need this in order to stay within Mongo's limits
+	// for request size.
+	maxNumSkylinksToProcess = 1000
+)
+
 var (
 	// ErrInvalidSkylink is returned when a client call supplies an invalid
 	// skylink hash.
@@ -36,6 +43,11 @@ var (
 )
 
 type (
+	// SkylinkOnly is a helper type which we can use when we want to grab a
+	// skylink from the DB.s
+	SkylinkOnly struct {
+		Skylink string `bson:"skylink"`
+	}
 	// Skylink represents a skylink object in the DB.
 	Skylink struct {
 		ID      primitive.ObjectID `bson:"_id,omitempty"`
@@ -125,9 +137,9 @@ func (db *DB) MarkUnpinned(ctx context.Context, skylink skymodules.Skylink) erro
 // that because we know that a user is pinning it but not so if we are running
 // a server sweep and documenting which skylinks are pinned by this server.
 func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, server string, markPinned bool) error {
-	db.staticLogger.Tracef("Entering AddServerForSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
-	defer db.staticLogger.Tracef("Exiting  AddServerForSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
-	filter := bson.M{"skylink": bson.M{"$in": skylinks}}
+	db.staticLogger.Tracef("Entering AddServerForSkylinks. Number of skylinks: %d, server: '%s'", len(skylinks), server)
+	defer db.staticLogger.Tracef("Exiting  AddServerForSkylinks. Number of skylinks: %d, server: '%s'", len(skylinks), server)
+
 	var update bson.M
 	if markPinned {
 		update = bson.M{
@@ -137,9 +149,35 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 	} else {
 		update = bson.M{"$addToSet": bson.M{"servers": server}}
 	}
-	opts := options.Update().SetUpsert(true)
-	_, err := db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update, opts)
-	return err
+
+	var sls []string
+	for len(skylinks) > 0 {
+		if len(skylinks) > maxNumSkylinksToProcess {
+			sls, skylinks = skylinks[:maxNumSkylinksToProcess], skylinks[maxNumSkylinksToProcess:]
+		} else {
+			sls, skylinks = skylinks[:], []string{}
+		}
+
+		// Make sure the skylink records exist.
+		recs := make([]interface{}, len(sls))
+		for idx, sl := range sls {
+			recs[idx] = SkylinkOnly{Skylink: sl}
+		}
+		insOps := options.InsertMany().SetOrdered(false)
+		_, err := db.staticDB.Collection(collSkylinks).InsertMany(ctx, recs, insOps)
+		if err != nil && !mongo.IsDuplicateKeyError(err) {
+			return err
+		}
+
+		// Update the skylink records.
+		filter := bson.M{"skylink": bson.M{"$in": sls}}
+		_, err = db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update)
+		if err != nil {
+			db.staticLogger.Debugf("Failed to add server '%s' for skylinks '%v'. Error: '%v'", server, sls, err)
+			return err
+		}
+	}
+	return nil
 }
 
 // RemoveServer removes the server as pinner from all skylinks in the database.
@@ -161,15 +199,28 @@ func (db *DB) RemoveServer(ctx context.Context, server string) (int64, error) {
 // be pinning these skylinks. If a skylink does not exist in the database it
 // will not be inserted.
 func (db *DB) RemoveServerFromSkylinks(ctx context.Context, skylinks []string, server string) error {
-	db.staticLogger.Tracef("Entering RemoveServerFromSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
-	defer db.staticLogger.Tracef("Exiting  RemoveServerFromSkylinks. Skylink: '%v', server: '%s'", skylinks, server)
-	filter := bson.M{
-		"skylink": bson.M{"$in": skylinks},
-		"servers": server,
-	}
+	db.staticLogger.Tracef("Entering RemoveServerFromSkylinks. Number of skylinks: %d, server: '%s'", len(skylinks), server)
+	defer db.staticLogger.Tracef("Exiting  RemoveServerFromSkylinks. Number of skylinks: %d, server: '%s'", len(skylinks), server)
+
 	update := bson.M{"$pull": bson.M{"servers": server}}
-	_, err := db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update)
-	return err
+	var sls []string
+	for len(skylinks) > 0 {
+		if len(skylinks) > maxNumSkylinksToProcess {
+			sls, skylinks = skylinks[:maxNumSkylinksToProcess], skylinks[maxNumSkylinksToProcess:]
+		} else {
+			sls, skylinks = skylinks[:], []string{}
+		}
+
+		filter := bson.M{
+			"skylink": bson.M{"$in": sls},
+			"servers": server,
+		}
+		_, err := db.staticDB.Collection(collSkylinks).UpdateMany(ctx, filter, update)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // FindAndLockUnderpinned fetches and locks a single underpinned skylink
@@ -215,9 +266,7 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, minPinn
 	if sr.Err() != nil {
 		return skymodules.Skylink{}, sr.Err()
 	}
-	var result struct {
-		Skylink string
-	}
+	var result SkylinkOnly
 	err := sr.Decode(&result)
 	if err != nil {
 		return skymodules.Skylink{}, errors.AddContext(err, "failed to decode result")
@@ -257,9 +306,7 @@ func (db *DB) SkylinksForServer(ctx context.Context, server string) ([]string, e
 	if c.RemainingBatchLength() == 0 {
 		return nil, mongo.ErrNoDocuments
 	}
-	var results []struct {
-		Skylink string `bson:"skylink"`
-	}
+	var results []SkylinkOnly
 	err = c.All(ctx, &results)
 	if err != nil {
 		return nil, errors.AddContext(err, "failed to decode results")

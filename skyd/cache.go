@@ -67,6 +67,7 @@ func (psc *PinnedSkylinksCache) Contains(skylink string) bool {
 func (psc *PinnedSkylinksCache) Diff(sls []string) (unknown []string, missing []string) {
 	psc.mu.Lock()
 	defer psc.mu.Unlock()
+	// Initialise the removedMap with the current state of the cache.
 	removedMap := make(map[string]struct{}, len(psc.skylinks))
 	for sl := range psc.skylinks {
 		removedMap[sl] = struct{}{}
@@ -75,7 +76,7 @@ func (psc *PinnedSkylinksCache) Diff(sls []string) (unknown []string, missing []
 		// Remove this skylink from the removedMap, because it has not been
 		// removed.
 		delete(removedMap, sl)
-		// If it's not in the cache - add it to the added list.
+		// If it's not in the cache - add it to the unknown list.
 		_, exists := psc.skylinks[sl]
 		if !exists {
 			unknown = append(unknown, sl)
@@ -85,7 +86,7 @@ func (psc *PinnedSkylinksCache) Diff(sls []string) (unknown []string, missing []
 	for sl := range removedMap {
 		missing = append(missing, sl)
 	}
-	return
+	return unknown, missing
 }
 
 // Rebuild rebuilds the cache of skylinks pinned by the local skyd. The
