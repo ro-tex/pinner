@@ -78,6 +78,14 @@ var (
 			Testing:  time.Millisecond,
 		}).(time.Duration)
 
+	// printPinningStatisticsPeriod defines how often we print intermediate
+	// statistics while pinning underpinned files.
+	printPinningStatisticsPeriod = build.Select(build.Var{
+		Standard: 10 * time.Minute,
+		Dev:      10 * time.Second,
+		Testing:  500 * time.Millisecond,
+	}).(time.Duration)
+
 	// sleepBetweenScans defines how often we'll scan the DB for underpinned
 	// skylinks.
 	// Needs to be at least twice as long as conf.SleepBetweenChecksForScan.
@@ -108,7 +116,10 @@ type (
 
 		dryRun     bool
 		minPinners int
-		mu         sync.Mutex
+		// skipSkylinks is a list of skylinks which we want to skip during this
+		// scan. These might be skylinks which errored out or blocked skylinks.
+		skipSkylinks []string
+		mu           sync.Mutex
 	}
 )
 
@@ -279,6 +290,27 @@ func (s *Scanner) staticScheduleNextScan() bool {
 func (s *Scanner) managedPinUnderpinnedSkylinks() {
 	s.staticLogger.Trace("Entering managedPinUnderpinnedSkylinks")
 	defer s.staticLogger.Trace("Exiting  managedPinUnderpinnedSkylinks")
+
+	// Clear out the skipped skylinks from the previous run.
+	s.mu.Lock()
+	s.skipSkylinks = []string{}
+	s.mu.Unlock()
+
+	intermediateStatsTicker := time.NewTicker(printPinningStatisticsPeriod)
+	defer intermediateStatsTicker.Stop()
+	countPinned := 0
+	t0 := lib.Now()
+
+	// Print final statistics when finishing the method.
+	defer func() {
+		t1 := lib.Now()
+		s.mu.Lock()
+		skipped := s.skipSkylinks
+		s.mu.Unlock()
+		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d, skipped skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned, len(skipped))
+		s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
+	}()
+
 	for {
 		// Check for service shutdown before talking to the DB.
 		select {
@@ -288,7 +320,23 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		default:
 		}
 
+		// Print intermediate statistics.
+		select {
+		case <-intermediateStatsTicker.C:
+			t1 := lib.Now()
+			s.mu.Lock()
+			numSkipped := len(s.skipSkylinks)
+			s.mu.Unlock()
+			s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d, skipped skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned, numSkipped)
+		default:
+		}
+
 		skylink, sp, continueScanning, err := s.managedFindAndPinOneUnderpinnedSkylink()
+		if err == nil {
+			countPinned++
+		} else {
+			s.staticLogger.Trace(err)
+		}
 		if !continueScanning {
 			return
 		}
@@ -325,9 +373,12 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	s.mu.Lock()
 	dryRun := s.dryRun
 	minPinners := s.minPinners
+	skipSkylinks := s.skipSkylinks
 	s.mu.Unlock()
 
-	sl, err := s.staticDB.FindAndLockUnderpinned(context.TODO(), s.staticServerName, minPinners)
+	ctx := context.TODO()
+
+	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, skipSkylinks, minPinners)
 	if database.IsNoSkylinksNeedPinning(err) {
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
@@ -335,8 +386,14 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		s.staticLogger.Warn(errors.AddContext(err, "failed to fetch underpinned skylink"))
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
+	// This is a flag we are going to raise if we delete the skylink from the DB
+	// while processing it.
+	var deleted bool
 	defer func() {
-		err = s.staticDB.UnlockSkylink(context.TODO(), sl, s.staticServerName)
+		if deleted {
+			return
+		}
+		err = s.staticDB.UnlockSkylink(ctx, sl, s.staticServerName)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to unlock skylink after trying to pin it"))
 		}
@@ -352,30 +409,47 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	if errors.Contains(err, skyd.ErrSkylinkAlreadyPinned) {
 		s.staticLogger.Info(err)
 		// The skylink is already pinned locally but it's not marked as such.
-		err = s.staticDB.AddServerForSkylinks(context.TODO(), []string{sl.String()}, s.staticServerName, false)
+		s.managedSkipSkylink(sl)
+		err = s.staticDB.AddServerForSkylinks(ctx, []string{sl.String()}, s.staticServerName, false)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
 		}
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
-	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") ||
-		strings.Contains(err.Error(), "connect: connection refused")) {
+	if errors.Contains(err, skyd.ErrSkylinkIsBlocked) {
+		s.staticLogger.Info(err)
+		s.managedSkipSkylink(sl)
+		// The skylink is blocked by skyd. We'll remove it from the database, so
+		// no other server will try to repin it.
+		err = s.staticDB.DeleteSkylink(ctx, sl)
+		deleted = err == nil
+		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
+	}
+	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") || strings.Contains(err.Error(), "connect: connection refused")) {
 		err = errors.AddContext(err, fmt.Sprintf("unrecoverable error while pinning '%s'", sl))
 		s.staticLogger.Error(err)
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
 	if err != nil {
 		s.staticLogger.Warn(errors.AddContext(err, fmt.Sprintf("failed to pin '%s'", sl)))
+		s.managedSkipSkylink(sl)
 		// Since this is not an unrecoverable error, we'll signal the caller to
 		// continue trying to pin other skylinks.
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
 	s.staticLogger.Infof("Successfully pinned '%s'", sl)
-	err = s.staticDB.AddServerForSkylinks(context.TODO(), []string{sl.String()}, s.staticServerName, false)
+	err = s.staticDB.AddServerForSkylinks(ctx, []string{sl.String()}, s.staticServerName, false)
 	if err != nil {
 		s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
 	}
 	return sl, sp, true, nil
+}
+
+// managedSkipSkylink adds a skylink to the list of skipped skylinks.
+func (s *Scanner) managedSkipSkylink(sl skymodules.Skylink) {
+	s.mu.Lock()
+	s.skipSkylinks = append(s.skipSkylinks, sl.String())
+	s.mu.Unlock()
 }
 
 // staticEstimateTimeToFull calculates how long we should sleep after pinning

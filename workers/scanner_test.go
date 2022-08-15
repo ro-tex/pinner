@@ -449,6 +449,39 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	if !test.Contains(sls, sl.String()) {
 		t.Fatalf("Expected to find '%s' among the skylinks pinned by this server, got '%v'", sl.String(), sls)
 	}
+
+	// Make sure we handle blocked skylinks correctly.
+	blockedSl := test.RandomSkylink()
+	_, err = db.CreateSkylink(ctx, blockedSl, serverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Make sure the skylink is in the DB.
+	_, err = db.FindSkylink(ctx, blockedSl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.RemoveServerFromSkylinks(ctx, []string{blockedSl.String()}, serverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	skydcm.SetPinError(skyd.ErrSkylinkIsBlocked)
+	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sls, err = db.SkylinksForServer(ctx, serverName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if test.Contains(sls, blockedSl.String()) {
+		t.Fatalf("Expected to NOT find '%s' among the skylinks pinned by this server, got '%v'", blockedSl.String(), sls)
+	}
+	// Make sure the skylink is gone from the DB.
+	_, err = db.FindSkylink(ctx, blockedSl)
+	if !errors.Contains(err, database.ErrSkylinkNotExist) {
+		t.Fatalf("Expected '%s', got '%v'", database.ErrSkylinkNotExist, err)
+	}
 }
 
 // TestEligibleToPin makes sure that we can follow our eligibility rules:

@@ -17,11 +17,16 @@ var (
 	// ErrSkylinkAlreadyPinned is returned when the skylink we're trying to pin
 	// is already pinned.
 	ErrSkylinkAlreadyPinned = errors.New("skylink already pinned")
+	// ErrSkylinkIsBlocked is returned when the skylinks we're trying to pin is
+	// blocked by skyd.
+	ErrSkylinkIsBlocked = errors.New("skylink is blocked")
 )
 
 type (
 	// Client describes the interface exposed by client.
 	Client interface {
+		// Blocklist gets the list of blocked skylinks.
+		Blocklist() (blocklist api.SkynetBlocklistGET, err error)
 		// ContractData returns the total data from Active and Passive contracts.
 		ContractData() (uint64, error)
 		// DiffPinnedSkylinks returns two lists of skylinks - the ones that
@@ -68,6 +73,11 @@ func NewClient(host, port, password string, cache *PinnedSkylinksCache, logger l
 		staticLogger:        logger,
 		staticSkylinksCache: cache,
 	}
+}
+
+// Blocklist gets the list of blocked skylinks.
+func (c *client) Blocklist() (blocklist api.SkynetBlocklistGET, err error) {
+	return c.staticClient.SkynetBlocklistGet()
 }
 
 // ContractData returns the total data from Active and Passive contracts.
@@ -133,16 +143,19 @@ func (c *client) Pin(skylink string) (skymodules.SiaPath, error) {
 		return skymodules.SiaPath{}, ErrSkylinkAlreadyPinned
 	}
 	sp, err := c.staticClient.SkynetSkylinkPinLazyPost(skylink)
+	if err != nil && strings.Contains(err.Error(), "failed to pin file to skynet: skylink is blocked") {
+		return skymodules.SiaPath{}, ErrSkylinkIsBlocked
+	}
 	if err == nil || errors.Contains(err, ErrSkylinkAlreadyPinned) {
 		c.staticSkylinksCache.Add(skylink)
 	}
 	return sp, err
 }
 
-// RebuildCache rebuilds the cache of skylinks pinned by the local skyd. The
-// rebuilding happens in a goroutine, allowing the method to return a channel
-// on which the caller can either wait or select. The caller can check whether
-// the rebuild was successful by calling Error().
+// RebuildCache rebuilds the cache of skylinks pinned by the local skyd. This
+// excludes blocked skylinks. The rebuilding happens in a goroutine, allowing
+// the method to return a channel on which the caller can either wait or select.
+// The caller can check whether the rebuild was successful by calling Error().
 func (c *client) RebuildCache() RebuildCacheResult {
 	c.staticLogger.Trace("Entering RebuildCache")
 	defer c.staticLogger.Trace("Exiting  RebuildCache")

@@ -2,6 +2,7 @@ package skyd
 
 import (
 	"fmt"
+	"go.sia.tech/siad/crypto"
 	"sync"
 
 	"gitlab.com/NebulousLabs/errors"
@@ -135,10 +136,23 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 		psc.mu.Unlock()
 	}()
 
+	// Check all skylinks against the list of blocked skylinks in skyd and we'll
+	// remove the blocked ones from the cache.
+	blocklist, err := skydClient.Blocklist()
+	if err != nil {
+		err = errors.AddContext(err, "failed to fetch blocklist")
+		return
+	}
+	blockMap := make(map[crypto.Hash]struct{}, len(blocklist.Blocklist))
+	for _, bl := range blocklist.Blocklist {
+		blockMap[bl] = struct{}{}
+	}
+
 	// Walk the entire Skynet folder and scan all files we find for skylinks.
 	dirsToWalk := []skymodules.SiaPath{skymodules.SkynetFolder}
 	sls := make(map[string]struct{})
 	var rd api.RenterDirectory
+	var sl skymodules.Skylink
 	for len(dirsToWalk) > 0 {
 		// Pop the first dir and walk it.
 		dir := dirsToWalk[0]
@@ -149,12 +163,16 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 			return
 		}
 		for _, f := range rd.Files {
-			for _, sl := range f.Skylinks {
-				if !validSkylink(sl) {
-					build.Critical(fmt.Errorf("Detected invalid skylink in a sia file: skylink '%s', siapath: '%s'", sl, f.SiaPath))
+			for _, s := range f.Skylinks {
+				if err = sl.LoadString(s); err != nil {
+					build.Critical(fmt.Errorf("Detected invalid skylink in a sia file: skylink '%s', siapath: '%s'", s, f.SiaPath))
 					continue
 				}
-				sls[sl] = struct{}{}
+				// Check if the skylink is blocked.
+				if _, exists := blockMap[sl.MerkleRoot()]; exists {
+					continue
+				}
+				sls[s] = struct{}{}
 			}
 		}
 		// Grab all subdirs and queue them for walking.

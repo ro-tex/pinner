@@ -85,6 +85,16 @@ func (db *DB) CreateSkylink(ctx context.Context, skylink skymodules.Skylink, ser
 	return s, nil
 }
 
+// DeleteSkylink removes the skylink from the database.
+func (db *DB) DeleteSkylink(ctx context.Context, skylink skymodules.Skylink) error {
+	filter := bson.M{"skylink": skylink.String()}
+	dr, err := db.staticDB.Collection(collSkylinks).DeleteOne(ctx, filter)
+	if err == mongo.ErrNoDocuments || dr.DeletedCount == 0 {
+		return ErrSkylinkNotExist
+	}
+	return nil
+}
+
 // FindSkylink fetches a skylink from the DB.
 func (db *DB) FindSkylink(ctx context.Context, skylink skymodules.Skylink) (Skylink, error) {
 	sr := db.staticDB.Collection(collSkylinks).FindOne(ctx, bson.M{"skylink": skylink.String()})
@@ -237,7 +247,10 @@ func (db *DB) RemoveServerFromSkylinks(ctx context.Context, skylinks []string, s
 //         { "lock_expires" : { "$lt": new Date() }}
 //     ]
 // })
-func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, minPinners int) (skymodules.Skylink, error) {
+func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSkylinks []string, minPinners int) (skymodules.Skylink, error) {
+	if skipSkylinks == nil {
+		skipSkylinks = make([]string, 0)
+	}
 	filter := bson.M{
 		// We use pinned != false because pinned == true is the default but it's
 		// possible that we've missed setting that somewhere.
@@ -246,6 +259,8 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, minPinn
 		"$expr": bson.M{"$lt": bson.A{bson.M{"$size": "$servers"}, minPinners}},
 		// Not pinned by the given server.
 		"servers": bson.M{"$nin": bson.A{server}},
+		// Skip all skylinks in the skipSkylinks list.
+		"skylink": bson.M{"$nin": skipSkylinks},
 		// Unlocked.
 		"$or": bson.A{
 			bson.M{"lock_expires": bson.M{"$exists": false}},
