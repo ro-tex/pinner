@@ -304,10 +304,10 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 	// Print final statistics when finishing the method.
 	defer func() {
 		t1 := lib.Now()
-		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned)
 		s.mu.Lock()
 		skipped := s.skipSkylinks
 		s.mu.Unlock()
+		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d, skipped skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned, len(skipped))
 		s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
 	}()
 
@@ -324,7 +324,10 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		select {
 		case <-intermediateStatsTicker.C:
 			t1 := lib.Now()
-			s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned)
+			s.mu.Lock()
+			numSkipped := len(s.skipSkylinks)
+			s.mu.Unlock()
+			s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d, skipped skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned, numSkipped)
 		default:
 		}
 
