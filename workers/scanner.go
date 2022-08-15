@@ -383,7 +383,13 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		s.staticLogger.Warn(errors.AddContext(err, "failed to fetch underpinned skylink"))
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
+	// This is a flag we are going to raise if we delete the skylink from the DB
+	// while processing it.
+	var deleted bool
 	defer func() {
+		if deleted {
+			return
+		}
 		err = s.staticDB.UnlockSkylink(ctx, sl, s.staticServerName)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to unlock skylink after trying to pin it"))
@@ -413,6 +419,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		// The skylink is blocked by skyd. We'll remove it from the database, so
 		// no other server will try to repin it.
 		err = s.staticDB.DeleteSkylink(ctx, sl)
+		deleted = err == nil
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
 	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") || strings.Contains(err.Error(), "connect: connection refused")) {
