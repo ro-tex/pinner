@@ -24,10 +24,21 @@ type (
 		Server      string `json:"server"`
 		NumSkylinks int64  `json:"numSkylinks"`
 	}
-	// HealthGET is the response type of GET /health
+	// HealthGET is the response type of GET /health.
+	// Primary field is only populated on error.
 	HealthGET struct {
-		DBAlive    bool `json:"dbAlive"`
-		MinPinners int  `json:"minPinners"`
+		DBAlive    bool   `json:"dbAlive"`
+		Error      error  `json:"error,omitempty"`
+		MinPinners int    `json:"minPinners"`
+		Primary    string `json:"primary,omitempty"`
+	}
+	// ExtendedHealth is a comprehensive set of information about the health
+	// of the DB node which includes some sensitive information. That's why we
+	// only log that data and we don't return it to callers.
+	ExtendedHealth struct {
+		Health                   *HealthGET      `json:"health"`
+		Hello                    *database.Hello `json:"hello"`
+		NumberSessionsInProgress int             `json:"numberSessionsInProgress"`
 	}
 	// SkylinkRequest describes a request that only provides a skylink.
 	SkylinkRequest struct {
@@ -41,10 +52,48 @@ type (
 
 // healthGET returns the status of the service
 func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+	// The public status that we'll return as response to this call.
+	status := &HealthGET{
+		DBAlive: true,
+	}
+	// Extended health status that we'll log for the benefit of the service's
+	// administrators.
+	extHealth := ExtendedHealth{
+		Health:                   status,
+		NumberSessionsInProgress: api.staticDB.NumberSessionsInProgress(),
+	}
+	// Ensure that we log the extended health information after we gather as
+	// much of it as possible.
+	defer func() {
+		b, err := json.Marshal(extHealth)
+		if err != nil {
+			api.staticLogger.Warnf("Failed to serialize extended health information. Error: %v", err)
+		}
+		api.staticLogger.Info(string(b))
+	}()
+
+	err := api.staticDB.Ping(req.Context())
+	if err != nil {
+		status.DBAlive = false
+		status.Error = errors.Compose(status.Error, err)
+	}
+	hello, err := api.staticDB.Hello(req.Context())
+	if err != nil {
+		status.Error = errors.Compose(status.Error, err)
+	} else {
+		extHealth.Hello = hello
+	}
+
 	mp, err := conf.MinPinners(req.Context(), api.staticDB)
-	var status HealthGET
-	status.DBAlive = err == nil
-	status.MinPinners = mp
+	if err != nil {
+		status.Error = errors.Compose(status.Error, err)
+		if hello != nil {
+			status.Primary = hello.Primary
+		}
+	} else {
+		status.MinPinners = mp
+	}
+
 	api.WriteJSON(w, status)
 }
 
