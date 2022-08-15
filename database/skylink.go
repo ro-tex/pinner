@@ -159,7 +159,7 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 		}
 
 		// Make sure the skylink records exist.
-		recs := make([]interface{}, len(sls), len(sls))
+		recs := make([]interface{}, len(sls))
 		for idx, sl := range sls {
 			recs[idx] = SkylinkOnly{Skylink: sl}
 		}
