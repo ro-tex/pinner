@@ -83,7 +83,7 @@ start-mongo:
      -e MONGO_INITDB_ROOT_USERNAME=$(MONGO_USER) \
      -e MONGO_INITDB_ROOT_PASSWORD=$(MONGO_PASSWORD) \
      -v $(shell pwd)/test/fixtures/mongo_keyfile:/data/mgkey \
-	mongo:4.4.1 mongod --port=$(MONGO_PORT) --replSet=skynet --keyFile=/data/mgkey 1>/dev/null 2>&1
+	mongo:4.4.2 mongod --port=$(MONGO_PORT) --replSet=skynet --keyFile=/data/mgkey 1>/dev/null 2>&1
 	# wait for mongo to start before we try to configure it
 	status=1 ; while [[ $$status -gt 0 ]]; do \
 		sleep 1 ; \
