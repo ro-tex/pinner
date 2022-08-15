@@ -78,6 +78,14 @@ var (
 			Testing:  time.Millisecond,
 		}).(time.Duration)
 
+	// printPinningStatisticsPeriod defines how often we print intermediate
+	// statistics while pinning underpinned files.
+	printPinningStatisticsPeriod = build.Select(build.Var{
+		Standard: 10 * time.Minute,
+		Dev:      10 * time.Second,
+		Testing:  500 * time.Millisecond,
+	}).(time.Duration)
+
 	// sleepBetweenScans defines how often we'll scan the DB for underpinned
 	// skylinks.
 	// Needs to be at least twice as long as conf.SleepBetweenChecksForScan.
@@ -288,6 +296,21 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 	s.skipSkylinks = []string{}
 	s.mu.Unlock()
 
+	intermediateStatsTicker := time.NewTicker(printPinningStatisticsPeriod)
+	defer intermediateStatsTicker.Stop()
+	countPinned := 0
+	t0 := lib.Now()
+
+	// Print final statistics when finishing the method.
+	defer func() {
+		t1 := lib.Now()
+		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned)
+		s.mu.Lock()
+		skipped := s.skipSkylinks
+		s.mu.Unlock()
+		s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
+	}()
+
 	for {
 		// Check for service shutdown before talking to the DB.
 		select {
@@ -297,7 +320,20 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		default:
 		}
 
+		// Print intermediate statistics.
+		select {
+		case <-intermediateStatsTicker.C:
+			t1 := lib.Now()
+			s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned)
+		default:
+		}
+
 		skylink, sp, continueScanning, err := s.managedFindAndPinOneUnderpinnedSkylink()
+		if err == nil {
+			countPinned++
+		} else {
+			s.staticLogger.Trace(err)
+		}
 		if !continueScanning {
 			return
 		}
@@ -310,7 +346,6 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 			s.staticWaitUntilHealthy(skylink, sp)
 			continue
 		}
-		s.staticLogger.Trace(err)
 		// In case of error we still want to sleep for a moment in order to
 		// avoid a tight(ish) loop of errors when we either fail to pin or
 		// fail to mark as pinned. Note that this only happens when we want
