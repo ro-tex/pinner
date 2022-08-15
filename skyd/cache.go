@@ -135,35 +135,6 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 		psc.mu.Unlock()
 	}()
 
-	// Walk the entire Skynet folder and scan all files we find for skylinks.
-	dirsToWalk := []skymodules.SiaPath{skymodules.SkynetFolder}
-	sls := make(map[string]struct{})
-	var rd api.RenterDirectory
-	for len(dirsToWalk) > 0 {
-		// Pop the first dir and walk it.
-		dir := dirsToWalk[0]
-		dirsToWalk = dirsToWalk[1:]
-		rd, err = skydClient.RenterDirRootGet(dir)
-		if err != nil {
-			err = errors.AddContext(err, "failed to fetch skynet directories from skyd")
-			return
-		}
-		for _, f := range rd.Files {
-			for _, sl := range f.Skylinks {
-				if !validSkylink(sl) {
-					build.Critical(fmt.Errorf("Detected invalid skylink in a sia file: skylink '%s', siapath: '%s'", sl, f.SiaPath))
-					continue
-				}
-				sls[sl] = struct{}{}
-			}
-		}
-		// Grab all subdirs and queue them for walking.
-		// Skip the first element because that's current directory.
-		for i := 1; i < len(rd.Directories); i++ {
-			dirsToWalk = append(dirsToWalk, rd.Directories[i].SiaPath)
-		}
-	}
-
 	// Check all skylinks against the list of blocked skylinks in skyd and we'll
 	// remove the blocked ones from the cache.
 	blocklist, err := skydClient.Blocklist()
@@ -175,18 +146,38 @@ func (psc *PinnedSkylinksCache) threadedRebuild(skydClient Client) {
 	for _, bl := range blocklist.Blocklist {
 		blockMap[bl] = struct{}{}
 	}
+
+	// Walk the entire Skynet folder and scan all files we find for skylinks.
+	dirsToWalk := []skymodules.SiaPath{skymodules.SkynetFolder}
+	sls := make(map[string]struct{})
+	var rd api.RenterDirectory
 	var sl skymodules.Skylink
-	for s := range sls {
-		err = sl.LoadString(s)
+	for len(dirsToWalk) > 0 {
+		// Pop the first dir and walk it.
+		dir := dirsToWalk[0]
+		dirsToWalk = dirsToWalk[1:]
+		rd, err = skydClient.RenterDirRootGet(dir)
 		if err != nil {
-			// This is an invalid skylink, remove it.
-			delete(sls, s)
-			continue
+			err = errors.AddContext(err, "failed to fetch skynet directories from skyd")
+			return
 		}
-		if _, exists := blockMap[sl.MerkleRoot()]; exists {
-			// This skylink is blocked. Remove it from the list.
-			delete(sls, s)
-			break
+		for _, f := range rd.Files {
+			for _, s := range f.Skylinks {
+				if err = sl.LoadString(s); err != nil {
+					build.Critical(fmt.Errorf("Detected invalid skylink in a sia file: skylink '%s', siapath: '%s'", s, f.SiaPath))
+					continue
+				}
+				// Check if the skylink is blocked.
+				if _, exists := blockMap[sl.MerkleRoot()]; exists {
+					continue
+				}
+				sls[s] = struct{}{}
+			}
+		}
+		// Grab all subdirs and queue them for walking.
+		// Skip the first element because that's current directory.
+		for i := 1; i < len(rd.Directories); i++ {
+			dirsToWalk = append(dirsToWalk, rd.Directories[i].SiaPath)
 		}
 	}
 
