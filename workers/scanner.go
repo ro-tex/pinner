@@ -188,6 +188,7 @@ func (s *Scanner) threadedScanAndPin() {
 			}
 			continue
 		}
+		s.staticLogger.Debugf("Next scan at %s", t.Format(conf.TimeFormat))
 		// Schedule a new scan if the time has passed. Round to seconds.
 		if t.Before(lib.Now().Truncate(time.Second)) {
 			stopped := s.staticScheduleNextScan()
