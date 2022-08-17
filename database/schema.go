@@ -51,6 +51,10 @@ func schema() map[string][]mongo.IndexModel {
 				Keys:    bson.D{{"pinned", 1}},
 				Options: options.Index().SetName("pinned"),
 			},
+			{
+				Keys:    bson.D{{"failed_attempts", 1}},
+				Options: options.Index().SetName("failed_attempts"),
+			},
 		},
 	}
 }

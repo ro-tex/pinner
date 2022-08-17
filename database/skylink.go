@@ -14,6 +14,9 @@ import (
 )
 
 const (
+	// maxNumFailedAttempts defines the maximum number of failed attempts at
+	// which we would still attempt to pin a skylink.
+	maxNumFailedAttempts = 5
 	// maxNumSkylinksToProcess defines the maximum number of skylinks we want to
 	// process in one batch. We need this in order to stay within Mongo's limits
 	// for request size.
@@ -57,9 +60,10 @@ type (
 		// skylink and we want to keep it alive. If Pinned is false then all
 		// servers should actively unpin the skylink and stop paying for it.
 		// This is not yet implemented.
-		Pinned      bool      `bson:"pinned"`
-		LockedBy    string    `bson:"locked_by"`
-		LockExpires time.Time `bson:"lock_expires"`
+		Pinned         bool      `bson:"pinned"`
+		LockedBy       string    `bson:"locked_by"`
+		LockExpires    time.Time `bson:"lock_expires"`
+		FailedAttempts uint      `bson:"failed_attempts,omitempty"`
 	}
 )
 
@@ -110,6 +114,16 @@ func (db *DB) FindSkylink(ctx context.Context, skylink skymodules.Skylink) (Skyl
 		return Skylink{}, err
 	}
 	return s, nil
+}
+
+// MarkFailedAttempt notes that we failed to pin this skylink.
+func (db *DB) MarkFailedAttempt(ctx context.Context, skylink skymodules.Skylink) error {
+	db.staticLogger.Tracef("Entering MarkFailedAttempt. Skylink: '%s'", skylink)
+	defer db.staticLogger.Tracef("Exiting  MarkFailedAttempt. Skylink: '%s'", skylink)
+	filter := bson.M{"skylink": skylink.String()}
+	update := bson.M{"$inc": bson.M{"failed_attempts": 1}}
+	_, err := db.staticDB.Collection(collSkylinks).UpdateOne(ctx, filter, update)
+	return err
 }
 
 // MarkPinned marks a skylink as pinned (or no longer unpinned), meaning
@@ -266,6 +280,9 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSky
 			bson.M{"lock_expires": bson.M{"$exists": false}},
 			bson.M{"lock_expires": bson.M{"$lt": lib.Now()}},
 		},
+		// We use "not greater than X" because that also covers the case where
+		// the field is not set.
+		"failed_attempts": bson.M{"$not": bson.M{"$gt": maxNumFailedAttempts}},
 	}
 	update := bson.M{
 		"$set": bson.M{

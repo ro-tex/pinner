@@ -344,7 +344,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		// already logged and the only indication it gives us is whether we
 		// should wait for the file we pinned to become healthy or not. If there
 		// is an error, then there is nothing to wait for.
-		if err == nil {
+		if err == nil && !sp.IsEmpty() {
 			// Block until the pinned skylink becomes healthy or until a timeout.
 			s.staticWaitUntilHealthy(skylink, sp)
 			continue
@@ -393,9 +393,15 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		if deleted {
 			return
 		}
-		err = s.staticDB.UnlockSkylink(ctx, sl, s.staticServerName)
 		if err != nil {
-			s.staticLogger.Debug(errors.AddContext(err, "failed to unlock skylink after trying to pin it"))
+			errMark := s.staticDB.MarkFailedAttempt(ctx, sl)
+			if errMark != nil {
+				s.staticLogger.Debug(errors.AddContext(errMark, "failed to mark a failed attempt"))
+			}
+		}
+		errUnlock := s.staticDB.UnlockSkylink(ctx, sl, s.staticServerName)
+		if errUnlock != nil {
+			s.staticLogger.Debug(errors.AddContext(errUnlock, "failed to unlock skylink after trying to pin it"))
 		}
 	}()
 
