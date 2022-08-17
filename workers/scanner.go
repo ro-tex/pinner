@@ -569,7 +569,7 @@ LOOP:
 		health, err := s.staticSkydClient.FileHealth(sp)
 		if err != nil {
 			err = errors.AddContext(err, "failed to get sia file's health")
-			s.staticLogger.Error(err)
+			s.staticLogger.Error(err, fmt.Sprintf("SiaPath: %s"), sp.Path)
 			break
 		}
 		// We use NeedsRepair instead of comparing the health to zero because
