@@ -478,7 +478,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	errUnexpected := errors.New("unexpected error!")
+	errUnexpected := errors.New("unexpected error")
 	skydcm.SetPinError(errUnexpected)
 	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
 	if !errors.Contains(err, errUnexpected) {
