@@ -451,17 +451,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	}
 
 	// Make sure we handle blocked skylinks correctly.
-	blockedSl := test.RandomSkylink()
-	_, err = db.CreateSkylink(ctx, blockedSl, serverName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Make sure the skylink is in the DB.
-	_, err = db.FindSkylink(ctx, blockedSl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = db.RemoveServerFromSkylinks(ctx, []string{blockedSl.String()}, serverName)
+	blockedSl, err := addUnderpinned(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,6 +471,44 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	_, err = db.FindSkylink(ctx, blockedSl)
 	if !errors.Contains(err, database.ErrSkylinkNotExist) {
 		t.Fatalf("Expected '%s', got '%v'", database.ErrSkylinkNotExist, err)
+	}
+
+	// Add a new skylink that will fail.
+	failSl, err := addUnderpinned(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errUnexpected := errors.New("unexpected error")
+	skydcm.SetPinError(errUnexpected)
+	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	if !errors.Contains(err, errUnexpected) {
+		t.Fatalf("Expected '%v', got '%v'", errUnexpected, err)
+	}
+	// Make sure the skylink's fail counter is incremented.
+	failedSlFromDB, err := db.FindSkylink(ctx, failSl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failedSlFromDB.FailedAttempts != 1 {
+		t.Fatalf("Expected %d failed attempts, got %d", 1, failedSlFromDB.FailedAttempts)
+	}
+	multiFailSl, err := addUnderpinned(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Increment the fail counter above the limit and make sure we're not trying
+	// that skylink anymore.
+	for i := 0; i <= database.MaxNumFailedAttempts; i++ {
+		err = db.MarkFailedAttempt(ctx, multiFailSl)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Set the pin error to nil, making all pins successful.
+	skydcm.SetPinError(nil)
+	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	if !errors.Contains(err, database.ErrNoUnderpinnedSkylinks) {
+		t.Fatalf("Expected '%v', got '%v'", errUnexpected, err)
 	}
 }
 
