@@ -449,6 +449,10 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	if err != nil {
 		s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
 	}
+	err = s.staticDB.ResetFailedAttempts(ctx, sl)
+	if err != nil {
+		s.staticLogger.Debug(errors.AddContext(err, "failed to reset the number of failed attempts"))
+	}
 	return sl, sp, true, nil
 }
 

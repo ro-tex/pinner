@@ -542,3 +542,53 @@ func TestSkylinksForServer(t *testing.T) {
 		t.Fatalf("Expected a list containing only %s but got %+v", sl1.String(), ls)
 	}
 }
+
+// TestFailedAttempts ensures that MarkFailedAttempt and ResetFailedAttempts
+// function as expected.
+func TestFailedAttempts(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+	t.Parallel()
+
+	ctx, cancel := test.Context()
+	defer cancel()
+	db, err := test.NewDatabase(ctx, t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sl := test.RandomSkylink()
+	srv := "server"
+
+	_, err = db.CreateSkylink(ctx, sl, srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.MarkFailedAttempt(ctx, sl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.MarkFailedAttempt(ctx, sl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sl1, err := db.FindSkylink(ctx, sl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sl1.FailedAttempts != 2 {
+		t.Fatalf("Expected %d failed attempts, got %d", 2, sl1.FailedAttempts)
+	}
+	err = db.ResetFailedAttempts(ctx, sl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sl2, err := db.FindSkylink(ctx, sl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sl2.FailedAttempts != 0 {
+		t.Fatalf("Expected %d failed attempts, got %d", 0, sl2.FailedAttempts)
+	}
+}

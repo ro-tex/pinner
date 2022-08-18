@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	// maxNumFailedAttempts defines the maximum number of failed attempts at
+	// MaxNumFailedAttempts defines the maximum number of failed attempts at
 	// which we would still attempt to pin a skylink.
-	maxNumFailedAttempts = 5
+	MaxNumFailedAttempts = 5
 	// maxNumSkylinksToProcess defines the maximum number of skylinks we want to
 	// process in one batch. We need this in order to stay within Mongo's limits
 	// for request size.
@@ -122,6 +122,16 @@ func (db *DB) MarkFailedAttempt(ctx context.Context, skylink skymodules.Skylink)
 	defer db.staticLogger.Tracef("Exiting  MarkFailedAttempt. Skylink: '%s'", skylink)
 	filter := bson.M{"skylink": skylink.String()}
 	update := bson.M{"$inc": bson.M{"failed_attempts": 1}}
+	_, err := db.staticDB.Collection(collSkylinks).UpdateOne(ctx, filter, update)
+	return err
+}
+
+// ResetFailedAttempts notes that we failed to pin this skylink.
+func (db *DB) ResetFailedAttempts(ctx context.Context, skylink skymodules.Skylink) error {
+	db.staticLogger.Tracef("Entering ResetFailedAttempts. Skylink: '%s'", skylink)
+	defer db.staticLogger.Tracef("Exiting  ResetFailedAttempts. Skylink: '%s'", skylink)
+	filter := bson.M{"skylink": skylink.String()}
+	update := bson.M{"$set": bson.M{"failed_attempts": 0}}
 	_, err := db.staticDB.Collection(collSkylinks).UpdateOne(ctx, filter, update)
 	return err
 }
@@ -282,7 +292,7 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSky
 		},
 		// We use "not greater than X" because that also covers the case where
 		// the field is not set.
-		"failed_attempts": bson.M{"$not": bson.M{"$gt": maxNumFailedAttempts}},
+		"failed_attempts": bson.M{"$not": bson.M{"$gt": MaxNumFailedAttempts}},
 	}
 	update := bson.M{
 		"$set": bson.M{
@@ -298,7 +308,10 @@ func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSky
 	if sr.Err() != nil {
 		return skymodules.Skylink{}, sr.Err()
 	}
-	var result SkylinkOnly
+	var result struct {
+		Skylink        string `bson:"skylink"`
+		FailedAttempts uint   `bson:"failed_attempts"`
+	}
 	err := sr.Decode(&result)
 	if err != nil {
 		return skymodules.Skylink{}, errors.AddContext(err, "failed to decode result")

@@ -492,6 +492,24 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	if failedSlFromDB.FailedAttempts != 1 {
 		t.Fatalf("Expected %d failed attempts, got %d", 1, failedSlFromDB.FailedAttempts)
 	}
+	multiFailSl, err := addUnderpinned(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Increment the fail counter above the limit and make sure we're not trying
+	// that skylink anymore.
+	for i := 0; i <= database.MaxNumFailedAttempts; i++ {
+		err = db.MarkFailedAttempt(ctx, multiFailSl)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Set the pin error to nil, making all pins successful.
+	skydcm.SetPinError(nil)
+	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	if !errors.Contains(err, database.ErrNoUnderpinnedSkylinks) {
+		t.Fatalf("Expected '%v', got '%v'", errUnexpected, err)
+	}
 }
 
 // TestEligibleToPin makes sure that we can follow our eligibility rules:
