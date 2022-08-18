@@ -333,7 +333,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		}
 
 		skylink, sp, continueScanning, err := s.managedFindAndPinOneUnderpinnedSkylink()
-		if err == nil {
+		if !sp.IsEmpty() {
 			countPinned++
 		} else {
 			s.staticLogger.Trace(err)
@@ -414,9 +414,8 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 
 	sp, err = s.staticSkydClient.Pin(sl.String())
 	if errors.Contains(err, skyd.ErrSkylinkAlreadyPinned) {
-		s.staticLogger.Info(err)
+		s.staticLogger.Info(errors.AddContext(err, "already pinned"))
 		// The skylink is already pinned locally but it's not marked as such.
-		s.managedSkipSkylink(sl)
 		err = s.staticDB.AddServerForSkylinks(ctx, []string{sl.String()}, s.staticServerName, false)
 		if err != nil {
 			s.staticLogger.Debug(errors.AddContext(err, "failed to mark as pinned by this server"))
@@ -424,8 +423,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 		return skymodules.Skylink{}, skymodules.SiaPath{}, true, err
 	}
 	if errors.Contains(err, skyd.ErrSkylinkIsBlocked) {
-		s.staticLogger.Info(err)
-		s.managedSkipSkylink(sl)
+		s.staticLogger.Info(errors.AddContext(err, "skylink is blocked"))
 		// The skylink is blocked by skyd. We'll remove it from the database, so
 		// no other server will try to repin it.
 		err = s.staticDB.DeleteSkylink(ctx, sl)
@@ -434,7 +432,7 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	}
 	if err != nil && (strings.Contains(err.Error(), "API authentication failed.") || strings.Contains(err.Error(), "connect: connection refused")) {
 		err = errors.AddContext(err, fmt.Sprintf("unrecoverable error while pinning '%s'", sl))
-		s.staticLogger.Error(err)
+		s.staticLogger.Error(errors.AddContext(err, "AUTH/CONN error"))
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
 	}
 	if err != nil {
