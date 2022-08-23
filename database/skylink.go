@@ -262,15 +262,16 @@ func (db *DB) RemoveServerFromSkylinks(ctx context.Context, skylinks []string, s
 // the given server.
 //
 // The MongoDB query is this:
-// db.getCollection('skylinks').find({
-//     "pinned": { "$ne": false }},
-//     "$expr": { "$lt": [{ "$size": "$servers" }, 2 ]},
-//     "servers": { "$nin": [ "ro-tex.siasky.ivo.NOPE" ]},
-//     "$or": [
-//         { "lock_expires" : { "$exists": false }},
-//         { "lock_expires" : { "$lt": new Date() }}
-//     ]
-// })
+//
+//	db.getCollection('skylinks').find({
+//	    "pinned": { "$ne": false }},
+//	    "$expr": { "$lt": [{ "$size": "$servers" }, 2 ]},
+//	    "servers": { "$nin": [ "ro-tex.siasky.ivo.NOPE" ]},
+//	    "$or": [
+//	        { "lock_expires" : { "$exists": false }},
+//	        { "lock_expires" : { "$lt": new Date() }}
+//	    ]
+//	})
 func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSkylinks []string, minPinners int) (skymodules.Skylink, error) {
 	if skipSkylinks == nil {
 		skipSkylinks = make([]string, 0)

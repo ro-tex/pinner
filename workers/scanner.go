@@ -45,12 +45,6 @@ const (
 	fanoutRedundancy          = 3
 )
 
-const (
-	// scannerThreads defines the number of scanning threads which might attempt
-	// to pin an underpinned skylink.
-	scannerThreads = 5
-)
-
 var (
 	// AlwaysPinThreshold sets a limit on the contract data of the server. If
 	// the server is below that limit, it will repin underpinned files even if it
@@ -61,10 +55,6 @@ var (
 			Dev:      1 * database.MiB,
 			Testing:  1 * database.MiB,
 		}).(int)
-	// MaxRepairingSkylinks defines the maximum number of skylink which scanner
-	// is allowed to wait on (wait for their health to reach 0). When we reach
-	// this number we'll stop pinning new skylinks until we go under it again.
-	MaxRepairingSkylinks = int32(3)
 	// PinningRangeThresholdPercent defines the cutoff line in the list of
 	// servers, ordered by how much data they are pinning, below which a server
 	// will pin underpinned skylinks.
@@ -120,6 +110,7 @@ type (
 	Scanner struct {
 		staticDB                *database.DB
 		staticLogger            logger.Logger
+		staticScannerThreads    int
 		staticServerName        string
 		staticSkydClient        skyd.Client
 		staticSleepBetweenScans time.Duration
@@ -139,7 +130,7 @@ type (
 )
 
 // NewScanner creates a new Scanner instance.
-func NewScanner(db *database.DB, logger logger.Logger, minPinners int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
+func NewScanner(db *database.DB, logger logger.Logger, minPinners int, threads int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
 	sleep := customSleepBetweenScans
 	if sleep == 0 {
 		sleep = sleepBetweenScans
@@ -147,6 +138,7 @@ func NewScanner(db *database.DB, logger logger.Logger, minPinners int, serverNam
 	return &Scanner{
 		staticDB:                db,
 		staticLogger:            logger,
+		staticScannerThreads:    threads,
 		staticServerName:        serverName,
 		staticSkydClient:        skydClient,
 		staticSleepBetweenScans: sleep,
@@ -253,7 +245,7 @@ func (s *Scanner) threadedScanAndPin() {
 		s.staticLogger.Tracef("Start scanning")
 		s.managedRefreshDryRun()
 		s.managedRefreshMinPinners()
-		s.managedClearSkippedSkylinks()
+		s.managedResetSkippedSkylinks()
 		s.managedResetStats()
 
 		// Start a thread that will print intermediate scanning statistics.
@@ -265,7 +257,7 @@ func (s *Scanner) threadedScanAndPin() {
 		// without properly respecting the MaxRepairingSkylinks limit. That's
 		// expected and chosen because of the simplicity of the implementation.
 		var wg sync.WaitGroup
-		for i := 0; i < scannerThreads; i++ {
+		for i := 0; i < s.staticScannerThreads; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -316,14 +308,14 @@ func (s *Scanner) threadedPrintStats(stopCh chan struct{}) {
 	}
 }
 
-// managedClearSkippedSkylinks clears the skipped skylinks.
-func (s *Scanner) managedClearSkippedSkylinks() {
+// managedResetSkippedSkylinks resets the skipped skylinks.
+func (s *Scanner) managedResetSkippedSkylinks() {
 	s.mu.Lock()
 	s.skipSkylinks = []string{}
 	s.mu.Unlock()
 }
 
-// managedClearStats clears the scanning statistics.
+// managedResetStats resets the scanning statistics.
 func (s *Scanner) managedResetStats() {
 	s.mu.Lock()
 	s.scanStart = lib.Now()
@@ -385,7 +377,6 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 
 		skylink, sp, continueScanning, err := s.managedFindAndPinOneUnderpinnedSkylink()
 		if !sp.IsEmpty() {
-			// println(" ++ sp not empty", sp.Path)
 			atomic.AddUint32(&s.atomicCountPinned, 1)
 		}
 		if err != nil {
@@ -518,9 +509,9 @@ func (s *Scanner) managedSkipSkylink(sl skymodules.Skylink) {
 // we pin another one. It returns a ballpark value.
 //
 // This method makes some assumptions for simplicity:
-// * assumes lazy pinning, meaning that none of the fanout is uploaded
-// * all skyfiles are assumed to be large files (base sector + fanout) and the
-//	metadata is assumed to fill up the base sector (to err on the safe side)
+//   - assumes lazy pinning, meaning that none of the fanout is uploaded
+//   - all skyfiles are assumed to be large files (base sector + fanout) and the
+//     metadata is assumed to fill up the base sector (to err on the safe side)
 func (s *Scanner) staticEstimateTimeToFull(skylink skymodules.Skylink) time.Duration {
 	meta, err := s.staticSkydClient.Metadata(skylink.String())
 	if err != nil {

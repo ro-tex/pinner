@@ -56,7 +56,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 	skydcm := skyd.NewSkydClientMock()
 	serverName := t.Name()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, serverName, cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, serverName, cfg.SleepBetweenScans, skydcm)
 	err = s.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func curryTest(fn func(t *testing.T, db *database.DB, cfg conf.Config, skydcm *s
 
 // testBase ensures that Scanner works as expected in the general case.
 func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 	err := s.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 // testSleepForOrUntilStopped ensures that staticSleepForOrUntilStopped
 // functions properly.
 func testSleepForOrUntilStopped(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 	// Sleep for 10ms, expect false.
 	stopped := s.staticSleepForOrUntilStopped(10 * time.Millisecond)
 	if stopped {
@@ -281,7 +281,7 @@ func testSleepForOrUntilStopped(t *testing.T, db *database.DB, cfg conf.Config, 
 // testEstimateTimeToFull ensures that staticEstimateTimeToFull functions
 // correctly.
 func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 
 	chunk := 10 * modules.SectorSizeStandard
 	oneChunkTime := time.Duration((1*chunk*fanoutRedundancy+(baseSectorRedundancy-1)*modules.SectorSize)/assumedUploadSpeedInBytes) * time.Second
@@ -324,7 +324,7 @@ func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skyd
 
 // testWaitUntilHealthy ensures that staticWaitUntilHealthy functions correctly.
 func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 
 	sl := test.RandomSkylink()
 	sp, err := sl.SiaPath()
@@ -388,7 +388,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	}
 	skydcm := skyd.NewSkydClientMock()
 	serverName := t.Name()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, serverName, cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, serverName, cfg.SleepBetweenScans, skydcm)
 
 	sl := test.RandomSkylink()
 
@@ -533,7 +533,7 @@ func TestEligibleToPin(t *testing.T) {
 		t.Fatal(err)
 	}
 	skydcm := skyd.NewSkydClientMock()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
 
 	// Set the load levels for three other servers. The last one will be empty.
 	err1 := s.staticDB.SetServerLoad(ctx, "server1", 30*int64(AlwaysPinThreshold))
@@ -623,7 +623,7 @@ func TestScannerObeysLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	skydcm := skyd.NewSkydClientMock()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
+	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
 	err = s.Start()
 	if err != nil {
 		t.Fatal(err)
