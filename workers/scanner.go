@@ -48,7 +48,7 @@ const (
 const (
 	// scannerThreads defines the number of scanning threads which might attempt
 	// to pin an underpinned skylink.
-	scannerThreads = 10
+	scannerThreads = 5
 )
 
 var (
@@ -124,10 +124,6 @@ type (
 		staticSkydClient        skyd.Client
 		staticSleepBetweenScans time.Duration
 		staticTG                *threadgroup.ThreadGroup
-
-		// atomicRepairing keeps track on how many skylinks are currently being
-		// repaired after being repinned.
-		atomicRepairing int32
 
 		// Stats variables:
 		atomicCountPinned uint32
@@ -405,7 +401,6 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		if !sp.IsEmpty() {
 			// Block until the pinned skylink becomes healthy or until a timeout.
 			s.staticWaitUntilHealthy(skylink, sp)
-			atomic.AddInt32(&s.atomicRepairing, -1)
 			continue
 		}
 		// In case of error we still want to sleep for a moment in order to
@@ -429,32 +424,11 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	s.staticLogger.Trace("Entering managedFindAndPinOneUnderpinnedSkylink")
 	defer s.staticLogger.Trace("Exiting  managedFindAndPinOneUnderpinnedSkylink")
 
-	// Check how many skylinks are currently being repaired and sleep if
-	// we've reached or exceeded the limit.
-	for atomic.LoadInt32(&s.atomicRepairing) >= MaxRepairingSkylinks {
-		select {
-		case <-time.After(SleepBetweenPins):
-		case <-s.staticTG.StopChan():
-			s.staticLogger.Trace("Stop channel closed")
-			return
-		}
-	}
-
 	s.mu.Lock()
 	dryRun := s.dryRun
 	minPinners := s.minPinners
 	skipSkylinks := s.skipSkylinks
 	s.mu.Unlock()
-
-	// Increment the repairing counter, effectively locking a repinning slot.
-	atomic.AddInt32(&s.atomicRepairing, 1)
-	defer func() {
-		// If the siapath we return is empty then we haven't repinned the file
-		// and we won't need to wait for it to be repaired.
-		if sp.IsEmpty() {
-			atomic.AddInt32(&s.atomicRepairing, -1)
-		}
-	}()
 
 	ctx := context.TODO()
 	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, skipSkylinks, minPinners)

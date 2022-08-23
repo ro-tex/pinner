@@ -3,10 +3,8 @@ package workers
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"github.com/skynetlabs/pinner/lib"
 	"gitlab.com/NebulousLabs/fastrand"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -191,7 +189,6 @@ func TestScannerSuite(t *testing.T) {
 		"SleepForOrUntilStopped": testSleepForOrUntilStopped,
 		"EstimateTimeToFull":     testEstimateTimeToFull,
 		"WaitUntilHealthy":       testWaitUntilHealthy,
-		"ParallelScans":          testParallelScans,
 	}
 
 	skydcm := skyd.NewSkydClientMock()
@@ -371,87 +368,6 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 	}
 }
 
-// testParallelScans ensures that we can perform multiple scans in parallel.
-func testParallelScans(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	ctx := context.Background()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, t.Name(), cfg.SleepBetweenScans, skydcm)
-	_ = conf.SetNextScan(ctx, db, lib.Now().Add(s.staticSleepBetweenScans-time.Nanosecond))
-	_ = s.Start()
-	defer func() { _ = s.Close() }()
-
-	type skylinkInfo struct {
-		Skylink skymodules.Skylink
-		SiaPath skymodules.SiaPath
-	}
-	// Set the size of all skylinks we create to be large enough, so their
-	// expected repair deadline is high enough not to influence the test.
-	meta := skymodules.SkyfileMetadata{Length: 1 << 30}
-	sls := make([]skylinkInfo, 0)
-	for i := 0; i < 2*int(MaxRepairingSkylinks); i++ {
-		sl, err := addUnderpinned(ctx, db)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sp, err := sl.SiaPath()
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Set health to "unhealthy", so we'll wait for them.
-		skydcm.SetHealth(sp, 0.8)
-		skydcm.SetMetadata(sl.String(), meta, nil)
-		sls = append(sls, skylinkInfo{Skylink: sl, SiaPath: sp})
-	}
-
-	// Expect to start pinning MaxRepairingSkylinks number of skylinks.
-	err := build.Retry(100, s.SleepBetweenScans()/20, func() error {
-		if num := atomic.LoadInt32(&s.atomicRepairing); num != MaxRepairingSkylinks {
-			return fmt.Errorf("Expected %d, got %d", MaxRepairingSkylinks, num)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Make sure we have exactly MaxRepairingSkylinks threads waiting.
-	if num := atomic.LoadInt32(&s.atomicRepairing); num != MaxRepairingSkylinks {
-		t.Fatalf("Expected %d, got %d", MaxRepairingSkylinks, num)
-	}
-	time.Sleep(s.SleepBetweenScans())
-	// Make sure we have exactly MaxRepairingSkylinks threads waiting.
-	if num := atomic.LoadInt32(&s.atomicRepairing); num != MaxRepairingSkylinks {
-		t.Fatalf("Expected %d, got %d", MaxRepairingSkylinks, num)
-	}
-	// Mark half as healthy. Ensure that we still have the max after a while.
-	for i := 0; i < int(MaxRepairingSkylinks); i++ {
-		skydcm.SetHealth(sls[i].SiaPath, 0)
-	}
-	// Make sure we have exactly MaxRepairingSkylinks threads waiting.
-	err = build.Retry(100, s.SleepBetweenScans()/20, func() error {
-		if num := atomic.LoadInt32(&s.atomicRepairing); num != MaxRepairingSkylinks {
-			return fmt.Errorf("Expected %d, got %d", MaxRepairingSkylinks, num)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Mark the rest as healthy.
-	for i := int(MaxRepairingSkylinks); i < 2*int(MaxRepairingSkylinks); i++ {
-		skydcm.SetHealth(sls[i].SiaPath, 0)
-	}
-	// Make sure the number of repairing skylinks falls to 0.
-	err = build.Retry(100, s.SleepBetweenScans()/20, func() error {
-		if num := atomic.LoadInt32(&s.atomicRepairing); num != 0 {
-			return fmt.Errorf("Expected %d, got %d", 0, num)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestFindAndPinOneUnderpinnedSkylink ensures that
 // managedFindAndPinOneUnderpinnedSkylink functions correctly.
 func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
@@ -628,10 +544,11 @@ func TestEligibleToPin(t *testing.T) {
 	}
 
 	// Check eligibility for a server that's not in the database.
-	// Expect an error.
+	// Expect the error to be handled internally by the method and the missing
+	// value to be set. Expect no error to be returned.
 	_, err = s.staticEligibleToPin(ctx)
-	if !errors.Contains(err, database.ErrServerLoadNotFound) {
-		t.Fatalf("Expected '%v', got '%v'", database.ErrServerLoadNotFound, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	// Set the server load level to a low level but not last.
 	// Bottom 50% but not bottom 30%. Still, below the hard limit, so we expect
