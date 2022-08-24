@@ -250,6 +250,10 @@ func (s *Scanner) threadedScanAndPin() {
 
 		// Start a thread that will print intermediate scanning statistics.
 		statsCh := make(chan struct{})
+		err = s.staticTG.Add()
+		if err != nil {
+			return // the threadgroup is stopped
+		}
 		go s.threadedPrintStats(statsCh)
 
 		// Start N threads that will scan for underpinned skylinks and repin
@@ -279,6 +283,7 @@ func (s *Scanner) threadedScanAndPin() {
 // threadedPrintStats prints regular updates on the scanning process plus a
 // final overview of the pinned and skipped skylinks.
 func (s *Scanner) threadedPrintStats(stopCh chan struct{}) {
+	defer s.staticTG.Done()
 	intermediateStatsTicker := time.NewTicker(printPinningStatisticsPeriod)
 	defer intermediateStatsTicker.Stop()
 
