@@ -21,13 +21,14 @@ import (
 // Default configuration values.
 // For individual descriptions see Config.
 const (
-	defaultAccountsHost = "10.10.10.70"
-	defaultAccountsPort = "3000"
-	defaultLogFile      = "" // disabled logging to file
-	defaultLogLevel     = logrus.InfoLevel
-	defaultSiaAPIHost   = "10.10.10.10"
-	defaultSiaAPIPort   = "9980"
-	defaultMinPinners   = 1
+	defaultAccountsHost   = "10.10.10.70"
+	defaultAccountsPort   = "3000"
+	defaultLogFile        = "" // disabled logging to file
+	defaultLogLevel       = logrus.InfoLevel
+	defaultScannerThreads = 5
+	defaultSiaAPIHost     = "10.10.10.10"
+	defaultSiaAPIPort     = "9980"
+	defaultMinPinners     = 1
 )
 
 // Cluster-wide configuration variable names.
@@ -105,6 +106,9 @@ type (
 		// which a skylink needs in order to not be considered underpinned.
 		// Anything below this value requires more servers to pin the skylink.
 		MinPinners int
+		// ScannerThreads defines the number of scanning threads which might attempt
+		// to pin an underpinned skylink.
+		ScannerThreads int
 		// ServerName holds the name of the current server. This name will be
 		// used for identifying which servers are pinning a given skylink.
 		ServerName string
@@ -134,6 +138,7 @@ func LoadConfig() (Config, error) {
 		LogFile:           defaultLogFile,
 		LogLevel:          defaultLogLevel,
 		MinPinners:        defaultMinPinners,
+		ScannerThreads:    defaultScannerThreads,
 		SiaAPIHost:        defaultSiaAPIHost,
 		SiaAPIPort:        defaultSiaAPIPort,
 		SleepBetweenScans: 0, // This will be ignored by the scanner.
@@ -178,6 +183,14 @@ func LoadConfig() (Config, error) {
 			log.Fatalf("PINNER_LOG_LEVEL has an invalid value of '%s'", val)
 		}
 		cfg.LogLevel = lvl
+	}
+	if val, ok = os.LookupEnv("PINNER_SCANNER_THREADS"); ok {
+		// Check for a bare number and interpret that as seconds.
+		st, err := strconv.ParseInt(val, 0, 0)
+		if err != nil {
+			log.Fatalf("PINNER_SCANNER_THREADS has an invalid value of '%s'", val)
+		}
+		cfg.ScannerThreads = int(st)
 	}
 	if val, ok = os.LookupEnv("PINNER_SLEEP_BETWEEN_SCANS"); ok {
 		// Check for a bare number and interpret that as seconds.

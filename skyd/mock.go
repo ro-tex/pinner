@@ -92,10 +92,14 @@ func (c *ClientMock) DiffPinnedSkylinks(skylinks []string) (unknown []string, mi
 
 // FileHealth returns the health of the given skylink.
 // Note that the mock will return 0 (fully healthy) by default.
-func (c *ClientMock) FileHealth(sl skymodules.SiaPath) (float64, error) {
+func (c *ClientMock) FileHealth(sp skymodules.SiaPath) (float64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.fileHealth[sl], nil
+	health, ok := c.fileHealth[sp]
+	if !ok {
+		return 1, nil
+	}
+	return health, nil
 }
 
 // IsPinning checks whether skyd is pinning the given skylink.
@@ -129,10 +133,12 @@ func (c *ClientMock) Pin(skylink string) (skymodules.SiaPath, error) {
 		return skymodules.SiaPath{}, ErrSkylinkAlreadyPinned
 	}
 	c.skylinks[skylink] = struct{}{}
-	sp := skymodules.SiaPath{
-		Path: skylink,
+	var sl skymodules.Skylink
+	err := sl.LoadString(skylink)
+	if err != nil {
+		return skymodules.SiaPath{}, err
 	}
-	return sp, nil
+	return sl.SiaPath()
 }
 
 // RebuildCache is a noop mock that takes at least 100ms.
@@ -226,15 +232,16 @@ func (c *ClientMock) SetUnpinError(e error) {
 // The mocked structure is the following:
 //
 // SkynetFolder/ (three dirs, one file)
-//    dirA/ (two files, one skylink each)
-//       fileA1 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1)
-//       fileA2 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A2)
-//    dirB/ (one file, one dir)
-//       dirC/ (one file, two skylinks)
-//          fileC (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C1, C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
-//       fileB (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B)
-//    dirD/ (empty)
-//    file (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___)
+//
+//	dirA/ (two files, one skylink each)
+//	   fileA1 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1)
+//	   fileA2 (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A2)
+//	dirB/ (one file, one dir)
+//	   dirC/ (one file, two skylinks)
+//	      fileC (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_C1, C2_uSb3BpGxmSbRAg1xj5T8SdB4hiSFiEW2sEEzxt5MNkg)
+//	   fileB (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q__B)
+//	dirD/ (empty)
+//	file (CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___)
 func (c *ClientMock) MockFilesystem() []string {
 	slR0 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q___"
 	slA1 := "CAClyosjvI9Fg75N-LRylcfba79bam9Ljp-4qfxS08Q_A1"

@@ -88,8 +88,9 @@ func NewTester(dbName string) (*Tester, error) {
 	// Start the HTTP server in a goroutine and gracefully stop it once the
 	// cancel function is called and the context is closed.
 	srv := &http.Server{
-		Addr:    ":" + testPortalPort,
-		Handler: server,
+		Addr:              ":" + testPortalPort,
+		Handler:           server,
+		ReadHeaderTimeout: time.Second,
 	}
 	go func() {
 		_ = srv.ListenAndServe()

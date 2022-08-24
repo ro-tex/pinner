@@ -6,6 +6,7 @@ import (
 	"github.com/skynetlabs/pinner/lib"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/skynetlabs/pinner/conf"
@@ -109,10 +110,15 @@ type (
 	Scanner struct {
 		staticDB                *database.DB
 		staticLogger            logger.Logger
+		staticScannerThreads    int
 		staticServerName        string
 		staticSkydClient        skyd.Client
 		staticSleepBetweenScans time.Duration
 		staticTG                *threadgroup.ThreadGroup
+
+		// Stats variables:
+		atomicCountPinned uint32
+		scanStart         time.Time
 
 		dryRun     bool
 		minPinners int
@@ -124,7 +130,7 @@ type (
 )
 
 // NewScanner creates a new Scanner instance.
-func NewScanner(db *database.DB, logger logger.Logger, minPinners int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
+func NewScanner(db *database.DB, logger logger.Logger, minPinners int, threads int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
 	sleep := customSleepBetweenScans
 	if sleep == 0 {
 		sleep = sleepBetweenScans
@@ -132,6 +138,7 @@ func NewScanner(db *database.DB, logger logger.Logger, minPinners int, serverNam
 	return &Scanner{
 		staticDB:                db,
 		staticLogger:            logger,
+		staticScannerThreads:    threads,
 		staticServerName:        serverName,
 		staticSkydClient:        skydClient,
 		staticSleepBetweenScans: sleep,
@@ -238,7 +245,31 @@ func (s *Scanner) threadedScanAndPin() {
 		s.staticLogger.Tracef("Start scanning")
 		s.managedRefreshDryRun()
 		s.managedRefreshMinPinners()
-		s.managedPinUnderpinnedSkylinks()
+		s.managedResetSkippedSkylinks()
+		s.managedResetStats()
+
+		// Start a thread that will print intermediate scanning statistics.
+		statsCh := make(chan struct{})
+		err = s.staticTG.Add()
+		if err != nil {
+			return // the threadgroup is stopped
+		}
+		go s.threadedPrintStats(statsCh)
+
+		// Start N threads that will scan for underpinned skylinks and repin
+		// them. It's possible that at first all of those start pinning skylinks
+		// without properly respecting the MaxRepairingSkylinks limit. That's
+		// expected and chosen because of the simplicity of the implementation.
+		var wg sync.WaitGroup
+		for i := 0; i < s.staticScannerThreads; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s.managedPinUnderpinnedSkylinks()
+			}()
+		}
+		wg.Wait()
+		close(statsCh)
 		s.staticLogger.Tracef("End scanning")
 
 		// Schedule the next scan, unless already scheduled:
@@ -247,6 +278,54 @@ func (s *Scanner) threadedScanAndPin() {
 			return
 		}
 	}
+}
+
+// threadedPrintStats prints regular updates on the scanning process plus a
+// final overview of the pinned and skipped skylinks.
+func (s *Scanner) threadedPrintStats(stopCh chan struct{}) {
+	defer s.staticTG.Done()
+	intermediateStatsTicker := time.NewTicker(printPinningStatisticsPeriod)
+	defer intermediateStatsTicker.Stop()
+
+	select {
+	case <-intermediateStatsTicker.C:
+		// Print intermediate statistics.
+		t1 := lib.Now()
+		s.mu.Lock()
+		numSkipped := len(s.skipSkylinks)
+		startTime := s.scanStart
+		s.mu.Unlock()
+		s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d, skipped skylinks %d",
+			t1.Format(conf.TimeFormat), t1.Sub(startTime).String(), atomic.LoadUint32(&s.atomicCountPinned), numSkipped)
+	case <-stopCh:
+		// Print final statistics when finishing the method.
+		t1 := lib.Now()
+		s.mu.Lock()
+		skipped := s.skipSkylinks
+		startTime := s.scanStart
+		s.mu.Unlock()
+		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d, skipped skylinks %d",
+			t1.Format(conf.TimeFormat), t1.Sub(startTime).String(), atomic.LoadUint32(&s.atomicCountPinned), len(skipped))
+		s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
+	case <-s.staticTG.StopChan():
+		s.staticLogger.Trace("Stop channel closed")
+		return
+	}
+}
+
+// managedResetSkippedSkylinks resets the skipped skylinks.
+func (s *Scanner) managedResetSkippedSkylinks() {
+	s.mu.Lock()
+	s.skipSkylinks = []string{}
+	s.mu.Unlock()
+}
+
+// managedResetStats resets the scanning statistics.
+func (s *Scanner) managedResetStats() {
+	s.mu.Lock()
+	s.scanStart = lib.Now()
+	s.mu.Unlock()
+	atomic.StoreUint32(&s.atomicCountPinned, 0)
 }
 
 // staticScheduleNextScan attempts to set the time of the next scan until either we
@@ -292,26 +371,6 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 	s.staticLogger.Trace("Entering managedPinUnderpinnedSkylinks")
 	defer s.staticLogger.Trace("Exiting  managedPinUnderpinnedSkylinks")
 
-	// Clear out the skipped skylinks from the previous run.
-	s.mu.Lock()
-	s.skipSkylinks = []string{}
-	s.mu.Unlock()
-
-	intermediateStatsTicker := time.NewTicker(printPinningStatisticsPeriod)
-	defer intermediateStatsTicker.Stop()
-	countPinned := 0
-	t0 := lib.Now()
-
-	// Print final statistics when finishing the method.
-	defer func() {
-		t1 := lib.Now()
-		s.mu.Lock()
-		skipped := s.skipSkylinks
-		s.mu.Unlock()
-		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d, skipped skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned, len(skipped))
-		s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
-	}()
-
 	for {
 		// Check for service shutdown before talking to the DB.
 		select {
@@ -321,21 +380,11 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		default:
 		}
 
-		// Print intermediate statistics.
-		select {
-		case <-intermediateStatsTicker.C:
-			t1 := lib.Now()
-			s.mu.Lock()
-			numSkipped := len(s.skipSkylinks)
-			s.mu.Unlock()
-			s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d, skipped skylinks %d", t1.Format(conf.TimeFormat), t1.Sub(t0).String(), countPinned, numSkipped)
-		default:
-		}
-
 		skylink, sp, continueScanning, err := s.managedFindAndPinOneUnderpinnedSkylink()
 		if !sp.IsEmpty() {
-			countPinned++
-		} else {
+			atomic.AddUint32(&s.atomicCountPinned, 1)
+		}
+		if err != nil {
 			s.staticLogger.Trace(err)
 		}
 		if !continueScanning {
@@ -345,7 +394,7 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 		// already logged and the only indication it gives us is whether we
 		// should wait for the file we pinned to become healthy or not. If there
 		// is an error, then there is nothing to wait for.
-		if err == nil && !sp.IsEmpty() {
+		if !sp.IsEmpty() {
 			// Block until the pinned skylink becomes healthy or until a timeout.
 			s.staticWaitUntilHealthy(skylink, sp)
 			continue
@@ -378,7 +427,6 @@ func (s *Scanner) managedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	s.mu.Unlock()
 
 	ctx := context.TODO()
-
 	sl, err := s.staticDB.FindAndLockUnderpinned(ctx, s.staticServerName, skipSkylinks, minPinners)
 	if database.IsNoSkylinksNeedPinning(err) {
 		return skymodules.Skylink{}, skymodules.SiaPath{}, false, err
@@ -466,9 +514,9 @@ func (s *Scanner) managedSkipSkylink(sl skymodules.Skylink) {
 // we pin another one. It returns a ballpark value.
 //
 // This method makes some assumptions for simplicity:
-// * assumes lazy pinning, meaning that none of the fanout is uploaded
-// * all skyfiles are assumed to be large files (base sector + fanout) and the
-//	metadata is assumed to fill up the base sector (to err on the safe side)
+//   - assumes lazy pinning, meaning that none of the fanout is uploaded
+//   - all skyfiles are assumed to be large files (base sector + fanout) and the
+//     metadata is assumed to fill up the base sector (to err on the safe side)
 func (s *Scanner) staticEstimateTimeToFull(skylink skymodules.Skylink) time.Duration {
 	meta, err := s.staticSkydClient.Metadata(skylink.String())
 	if err != nil {
@@ -527,7 +575,8 @@ func (s *Scanner) staticEligibleToPin(ctx context.Context) (bool, error) {
 	pinnedData, err := s.staticDB.ServerLoad(ctx, s.staticServerName)
 	if errors.Contains(err, database.ErrServerLoadNotFound) {
 		// We don't know what the server's load is. Get that data.
-		load, err := s.staticSkydClient.ContractData()
+		var load uint64
+		load, err = s.staticSkydClient.ContractData()
 		if err != nil {
 			return false, errors.AddContext(err, "failed to fetch server's load")
 		}
