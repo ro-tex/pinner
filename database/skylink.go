@@ -380,7 +380,7 @@ func (db *DB) UnlockSkylink(ctx context.Context, skylink skymodules.Skylink, ser
 		},
 	}
 	ur, err := db.staticDB.Collection(collSkylinks).UpdateOne(ctx, filter, update)
-	if errors.Contains(err, mongo.ErrNoDocuments) || ur.ModifiedCount == 0 {
+	if errors.Contains(err, mongo.ErrNoDocuments) || (err == nil && ur.ModifiedCount == 0) {
 		return ErrNoSkylinksLocked
 	}
 	return err
