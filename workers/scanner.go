@@ -59,17 +59,6 @@ var (
 	// servers, ordered by how much data they are pinning, below which a server
 	// will pin underpinned skylinks.
 	PinningRangeThresholdPercent = 0.30
-	// SleepBetweenPins defines how long we'll sleep between pinning files.
-	// We want to add this sleep in order to prevent a single server from
-	// grabbing all underpinned files and overloading itself. We also want to
-	// allow for some time for the newly pinned files to reach full redundancy
-	// before we pin more files.
-	SleepBetweenPins = build.Select(
-		build.Var{
-			Standard: 10 * time.Second,
-			Dev:      time.Second,
-			Testing:  time.Millisecond,
-		}).(time.Duration)
 	// SleepBetweenHealthChecks defines the wait time between calls to skyd to
 	// check the current health of a given file.
 	SleepBetweenHealthChecks = build.Select(
@@ -399,15 +388,6 @@ func (s *Scanner) managedPinUnderpinnedSkylinks() {
 			s.staticWaitUntilHealthy(skylink, sp)
 			continue
 		}
-		// In case of error we still want to sleep for a moment in order to
-		// avoid a tight(ish) loop of errors when we either fail to pin or
-		// fail to mark as pinned. Note that this only happens when we want
-		// to continue scanning, otherwise we would have exited right after
-		// managedFindAndPinOneUnderpinnedSkylink.
-		stopped := s.staticSleepForOrUntilStopped(SleepBetweenPins)
-		if stopped {
-			return
-		}
 	}
 }
 
@@ -522,7 +502,8 @@ func (s *Scanner) staticEstimateTimeToFull(skylink skymodules.Skylink) time.Dura
 	if err != nil {
 		err = errors.AddContext(err, "failed to get metadata for skylink")
 		s.staticLogger.Error(err)
-		return SleepBetweenPins
+		// No metadata. Return some ballpark value that makes sense.
+		return SleepBetweenHealthChecks
 	}
 	chunkSize := 10 * modules.SectorSizeStandard
 	numChunks := meta.Length / chunkSize

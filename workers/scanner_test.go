@@ -294,7 +294,7 @@ func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skyd
 	}{
 		"error": {
 			err:     errors.New("error while fetching metadata"),
-			expTime: SleepBetweenPins, // 1ms
+			expTime: SleepBetweenHealthChecks, // 1ms
 		},
 		"zero": {
 			size:    0,            // defaults to one chunk
