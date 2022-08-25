@@ -68,6 +68,13 @@ var (
 			Testing:  time.Millisecond,
 		}).(time.Duration)
 
+	// minDeadline defines the minimum time we're going to wait for a skylink to
+	// reach full health before timing out.
+	minDeadline = build.Select(build.Var{
+		Standard: 30 * time.Second,
+		Dev:      time.Second,
+		Testing:  time.Millisecond,
+	}).(time.Duration)
 	// printPinningStatisticsPeriod defines how often we print intermediate
 	// statistics while pinning underpinned files.
 	printPinningStatisticsPeriod = build.Select(build.Var{
@@ -75,7 +82,6 @@ var (
 		Dev:      10 * time.Second,
 		Testing:  500 * time.Millisecond,
 	}).(time.Duration)
-
 	// sleepBetweenScans defines how often we'll scan the DB for underpinned
 	// skylinks.
 	// Needs to be at least twice as long as conf.SleepBetweenChecksForScan.
@@ -638,5 +644,9 @@ func (s *Scanner) staticSleepForOrUntilStopped(dur time.Duration) bool {
 // healthy before giving up. It's twice the expected time, as returned by
 // staticEstimateTimeToFull.
 func (s *Scanner) staticDeadline(skylink skymodules.Skylink) *time.Timer {
-	return time.NewTimer(2 * s.staticEstimateTimeToFull(skylink))
+	deadline := 2 * s.staticEstimateTimeToFull(skylink)
+	if deadline < minDeadline {
+		deadline = minDeadline
+	}
+	return time.NewTimer(deadline)
 }
