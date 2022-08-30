@@ -91,6 +91,11 @@ func TestSkylink(t *testing.T) {
 	if test.Contains(s2.Servers, otherServer) {
 		t.Fatalf("Did not expect to have %s there", otherServer)
 	}
+	// Mark sl1 as failed once.
+	err = db.MarkFailedAttempt(ctx, sl1)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Add a new server to the list.
 	server := "new server"
@@ -112,6 +117,14 @@ func TestSkylink(t *testing.T) {
 	}
 	if !test.Contains(s2.Servers, server) {
 		t.Fatalf("Expected to find '%s' in the list, got '%v'", server, s2.Servers)
+	}
+	// Make sure sl1 is no longer marked as failed.
+	s1, err = db.FindSkylink(ctx, sl1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s1.FailedAttempts > 0 {
+		t.Fatalf("Expected zero failed attempts, got %d", s1.FailedAttempts)
 	}
 	// Remove a server from the list.
 	err = db.RemoveServerFromSkylinks(ctx, []string{sl1.String(), sl2.String()}, server)
@@ -168,6 +181,11 @@ func TestSkylink(t *testing.T) {
 	if s1.Pinned {
 		t.Fatal("Expected the skylink to be unpinned.")
 	}
+	// Mark sl1 as failed once.
+	err = db.MarkFailedAttempt(ctx, sl1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Add a server to the skylink with `markUnpinned` set to true.
 	// Expect the skylink to be pinned.
 	err = db.AddServerForSkylinks(ctx, []string{sl1.String()}, "new server pin true", true)
@@ -180,6 +198,10 @@ func TestSkylink(t *testing.T) {
 	}
 	if !s1.Pinned {
 		t.Fatal("Expected the skylink to be pinned.")
+	}
+	// Make sure sl1 is no longer marked as failed.
+	if s1.FailedAttempts > 0 {
+		t.Fatalf("Expected zero failed attempts, got %d", s1.FailedAttempts)
 	}
 	// Delete the skylink.
 	err = db.DeleteSkylink(ctx, sl1)

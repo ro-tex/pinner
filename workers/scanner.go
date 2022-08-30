@@ -282,29 +282,31 @@ func (s *Scanner) threadedPrintStats(stopCh chan struct{}) {
 	intermediateStatsTicker := time.NewTicker(printPinningStatisticsPeriod)
 	defer intermediateStatsTicker.Stop()
 
-	select {
-	case <-intermediateStatsTicker.C:
-		// Print intermediate statistics.
-		t1 := lib.Now()
-		s.mu.Lock()
-		numSkipped := len(s.skipSkylinks)
-		startTime := s.scanStart
-		s.mu.Unlock()
-		s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d, skipped skylinks %d",
-			t1.Format(conf.TimeFormat), t1.Sub(startTime).String(), atomic.LoadUint32(&s.atomicCountPinned), numSkipped)
-	case <-stopCh:
-		// Print final statistics when finishing the method.
-		t1 := lib.Now()
-		s.mu.Lock()
-		skipped := s.skipSkylinks
-		startTime := s.scanStart
-		s.mu.Unlock()
-		s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d, skipped skylinks %d",
-			t1.Format(conf.TimeFormat), t1.Sub(startTime).String(), atomic.LoadUint32(&s.atomicCountPinned), len(skipped))
-		s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
-	case <-s.staticTG.StopChan():
-		s.staticLogger.Trace("Stop channel closed")
-		return
+	for {
+		select {
+		case <-intermediateStatsTicker.C:
+			// Print intermediate statistics.
+			t1 := lib.Now()
+			s.mu.Lock()
+			numSkipped := len(s.skipSkylinks)
+			startTime := s.scanStart
+			s.mu.Unlock()
+			s.staticLogger.Infof("Time %s, runtime %s, pinned skylinks %d, skipped skylinks %d",
+				t1.Format(conf.TimeFormat), t1.Sub(startTime).String(), atomic.LoadUint32(&s.atomicCountPinned), numSkipped)
+		case <-stopCh:
+			// Print final statistics when finishing the method.
+			t1 := lib.Now()
+			s.mu.Lock()
+			skipped := s.skipSkylinks
+			startTime := s.scanStart
+			s.mu.Unlock()
+			s.staticLogger.Infof("Finished at %s, runtime %s, pinned skylinks %d, skipped skylinks %d",
+				t1.Format(conf.TimeFormat), t1.Sub(startTime).String(), atomic.LoadUint32(&s.atomicCountPinned), len(skipped))
+			s.staticLogger.Tracef("Skipped %d skylinks: %v", len(skipped), skipped)
+		case <-s.staticTG.StopChan():
+			s.staticLogger.Trace("Stop channel closed")
+			return
+		}
 	}
 }
 
