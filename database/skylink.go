@@ -178,7 +178,10 @@ func (db *DB) AddServerForSkylinks(ctx context.Context, skylinks []string, serve
 	if markPinned {
 		update = bson.M{
 			"$addToSet": bson.M{"servers": server},
-			"$set":      bson.M{"pinned": true},
+			"$set": bson.M{
+				"pinned":          true,
+				"failed_attempts": 0,
+			},
 		}
 	} else {
 		update = bson.M{"$addToSet": bson.M{"servers": server}}
