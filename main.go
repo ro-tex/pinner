@@ -11,7 +11,7 @@ import (
 	"github.com/skynetlabs/pinner/logger"
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/sweeper"
-	"github.com/skynetlabs/pinner/workers"
+	"github.com/skynetlabs/pinner/scanner"
 	"gitlab.com/NebulousLabs/errors"
 )
 
@@ -44,7 +44,7 @@ func main() {
 
 	// Start the background scanner.
 	skydClient := skyd.NewClient(cfg.SiaAPIHost, cfg.SiaAPIPort, cfg.SiaAPIPassword, skyd.NewCache(), logger)
-	scanner := workers.NewScanner(db, logger, cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydClient)
+	scanner := scanner.NewScanner(db, logger, cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydClient)
 	err = scanner.Start()
 	if err != nil {
 		log.Fatal(errors.AddContext(err, "failed to start Scanner"))
@@ -54,7 +54,7 @@ func main() {
 	swpr.UpdateSchedule(sweeper.SweepInterval)
 
 	// Initialise the server.
-	server, err := api.New(cfg.ServerName, db, logger, skydClient, swpr)
+	server, err := api.New(cfg.ServerName, db, logger, skydClient, scanner, swpr)
 	if err != nil {
 		log.Fatal(errors.AddContext(err, "failed to build the api"))
 	}

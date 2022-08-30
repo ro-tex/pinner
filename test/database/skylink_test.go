@@ -52,11 +52,11 @@ func TestSkylink(t *testing.T) {
 	// Create the skylinks.
 	s1, err := db.CreateSkylink(ctx, sl1, cfg.ServerName)
 	if err != nil {
-		t.Fatal("Failed to create a skylink:", err)
+		t.Fatal("failed to create a skylink:", err)
 	}
 	s2, err := db.CreateSkylink(ctx, sl2, cfg.ServerName)
 	if err != nil {
-		t.Fatal("Failed to create a skylink:", err)
+		t.Fatal("failed to create a skylink:", err)
 	}
 	// Validate that the underlying skylink is the same.
 	if s1.Skylink != sl1.String() {

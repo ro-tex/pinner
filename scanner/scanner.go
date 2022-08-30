@@ -1,4 +1,4 @@
-package workers
+package scanner
 
 import (
 	"context"
@@ -216,7 +216,7 @@ func (s *Scanner) threadedScanAndPin() {
 
 		eligible, err := s.staticEligibleToPin(ctx)
 		if err != nil {
-			s.staticLogger.Warnf("Failed to determine if server is eligible to repin underpinned skylinks. Skipping repin. Error:: %v", err)
+			s.staticLogger.Warnf("failed to determine if server is eligible to repin underpinned skylinks. Skipping repin. Error:: %v", err)
 			continue
 		}
 		if !eligible {
