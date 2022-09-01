@@ -15,7 +15,7 @@ type (
 		blocklist      api.SkynetBlocklistGET
 		contractData   uint64
 		fileHealth     map[skymodules.SiaPath]float64
-		filesystemMock map[skymodules.SiaPath]rdReturnType
+		filesystemMock map[skymodules.SiaPath]RDReturnType
 		metadata       map[string]skymodules.SkyfileMetadata
 		metadataErrors map[string]error
 		skylinks       map[string]struct{}
@@ -24,9 +24,9 @@ type (
 
 		mu sync.Mutex
 	}
-	// rdReturnType describes the return values of RenterDirRootGet and allows
+	// RDReturnType describes the return values of RenterDirRootGet and allows
 	// us to build a directory structure representation in NodeSkydClientMock.
-	rdReturnType struct {
+	RDReturnType struct {
 		RD  api.RenterDirectory
 		Err error
 	}
@@ -34,13 +34,19 @@ type (
 
 // NewSkydClientMock returns an initialised copy of ClientMock
 func NewSkydClientMock() *ClientMock {
-	return &ClientMock{
+	mock := &ClientMock{
 		fileHealth:     make(map[skymodules.SiaPath]float64),
-		filesystemMock: make(map[skymodules.SiaPath]rdReturnType),
+		filesystemMock: make(map[skymodules.SiaPath]RDReturnType),
 		metadata:       make(map[string]skymodules.SkyfileMetadata),
 		metadataErrors: make(map[string]error),
 		skylinks:       make(map[string]struct{}),
 	}
+	// Initialize the root info.
+	rdrt := RDReturnType{
+		RD: api.RenterDirectory{Directories: []skymodules.DirectoryInfo{{}}},
+	}
+	mock.SetMapping(skymodules.RootSiaPath(), rdrt)
+	return mock
 }
 
 // Blocklist gets the list of blocked skylinks. Noop.
@@ -180,7 +186,7 @@ func (c *ClientMock) SetHealth(sp skymodules.SiaPath, h float64) {
 }
 
 // SetMapping allows us to set the state of the filesystem mock.
-func (c *ClientMock) SetMapping(siaPath skymodules.SiaPath, rdrt rdReturnType) {
+func (c *ClientMock) SetMapping(siaPath skymodules.SiaPath, rdrt RDReturnType) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.filesystemMock[siaPath] = rdrt
@@ -268,7 +274,7 @@ func (c *ClientMock) MockFilesystem() []string {
 	fileR0 := skymodules.FileInfo{Skylinks: []string{slR0}}
 
 	// Set root.
-	rdrt := rdReturnType{
+	rdrt := RDReturnType{
 		RD: api.RenterDirectory{
 			Directories: []skymodules.DirectoryInfo{root, dirA, dirB, dirD},
 			Files:       []skymodules.FileInfo{fileR0},
@@ -277,7 +283,7 @@ func (c *ClientMock) MockFilesystem() []string {
 	}
 	c.SetMapping(skymodules.SkynetFolder, rdrt)
 	// Set dirA.
-	rdrt = rdReturnType{
+	rdrt = RDReturnType{
 		RD: api.RenterDirectory{
 			Directories: []skymodules.DirectoryInfo{dirA},
 			Files:       []skymodules.FileInfo{fileA1, fileA2},
@@ -286,7 +292,7 @@ func (c *ClientMock) MockFilesystem() []string {
 	}
 	c.SetMapping(dirAsp, rdrt)
 	// Set dirB.
-	rdrt = rdReturnType{
+	rdrt = RDReturnType{
 		RD: api.RenterDirectory{
 			Directories: []skymodules.DirectoryInfo{dirB, dirC},
 			Files:       []skymodules.FileInfo{fileB0},
@@ -295,7 +301,7 @@ func (c *ClientMock) MockFilesystem() []string {
 	}
 	c.SetMapping(dirBsp, rdrt)
 	// Set dirC.
-	rdrt = rdReturnType{
+	rdrt = RDReturnType{
 		RD: api.RenterDirectory{
 			Directories: []skymodules.DirectoryInfo{dirC},
 			Files:       []skymodules.FileInfo{fileC0},
@@ -304,7 +310,7 @@ func (c *ClientMock) MockFilesystem() []string {
 	}
 	c.SetMapping(dirCsp, rdrt)
 	// Set dirD.
-	rdrt = rdReturnType{
+	rdrt = RDReturnType{
 		RD: api.RenterDirectory{
 			Directories: nil,
 			Files:       nil,

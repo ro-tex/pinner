@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"github.com/skynetlabs/pinner/lib"
 	"gitlab.com/NebulousLabs/fastrand"
+	"gitlab.com/SkynetLabs/skyd/node/api"
 	"testing"
 	"time"
 
@@ -516,6 +517,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 // - always eligible if below the hard limit
 // - always eligible if last
 // - eligible if in the last X%
+// - not eligible if repair data is above threshold
 func TestEligibleToPin(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -601,6 +603,22 @@ func TestEligibleToPin(t *testing.T) {
 	}
 	if !eligible {
 		t.Fatal("Expected to be eligible, wasn't.")
+	}
+	// Set the amount of repair data to be above the pinning threshold.
+	rdrt := skyd.RDReturnType{
+		RD: api.RenterDirectory{
+			Directories: []skymodules.DirectoryInfo{
+				{AggregateRepairSize: RepairDataPinningThreshold + 1},
+			},
+		},
+	}
+	skydcm.SetMapping(skymodules.RootSiaPath(), rdrt)
+	eligible, err = s.staticEligibleToPin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eligible {
+		t.Fatal("Expected not to be eligible, was.")
 	}
 }
 
