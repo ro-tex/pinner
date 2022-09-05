@@ -59,6 +59,10 @@ var (
 	// servers, ordered by how much data they are pinning, below which a server
 	// will pin underpinned skylinks.
 	PinningRangeThresholdPercent = 0.30
+	// RepairDataPinningThreshold sets a limit on the amount of repair data skyd
+	// needs to handle. If skyd needs to repair more than this amount, it won't
+	// pin underpinned skylinks.
+	RepairDataPinningThreshold = uint64(database.TiB)
 	// SleepBetweenHealthChecks defines the wait time between calls to skyd to
 	// check the current health of a given file.
 	SleepBetweenHealthChecks = build.Select(
@@ -578,8 +582,22 @@ func (s *Scanner) staticEligibleToPin(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// Below the hard limit.
+	rf, err := s.staticSkydClient.RenterDirRootGet(skymodules.RootSiaPath())
+	if err != nil {
+		err = errors.AddContext(err, "failed to fetch repair data size")
+		s.staticLogger.Debug(err)
+		return false, err
+	}
+	// This approach is directly copied from skyc's behaviour, except the check
+	// for slice size, which is an extra precaution here because we're running
+	// a service and not a cli client.
+	if len(rf.Directories) > 0 && rf.Directories[0].AggregateRepairSize > RepairDataPinningThreshold {
+		s.staticLogger.Tracef("Not eligible to pin: repair data is %d GiB", rf.Directories[0].AggregateRepairSize/database.GiB)
+		return false, nil
+	}
+	// Below the hard limit on pinned data.
 	if pinnedData < int64(AlwaysPinThreshold) {
+		s.staticLogger.Tracef("Eligible to pin: pinned data is %d GiB", pinnedData/database.GiB)
 		return true, nil
 	}
 	pos, total, err := s.staticDB.ServerLoadPosition(ctx, s.staticServerName)
