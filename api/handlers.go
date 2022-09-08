@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/skynetlabs/pinner/conf"
@@ -264,8 +265,14 @@ func (api *API) sweepStatusGET(w http.ResponseWriter, _ *http.Request, _ httprou
 }
 
 // scannerStatusGET responds with the status of the latest scan.
-func (api *API) scannerStatusGET(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
-	// api.WriteJSON(w, api.staticScanner.Status())
+func (api *API) scannerStatusGET(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	verbose, _ := strconv.ParseBool(r.FormValue("verbose"))
+	st := api.staticScanner.Status()
+	if !verbose {
+		// Do not list all failed skylinks.
+		st.Failed = nil
+	}
+	api.WriteJSON(w, st)
 }
 
 // parseAndResolve parses the given string representation of a skylink and

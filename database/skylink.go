@@ -18,8 +18,8 @@ const (
 	// which we would still attempt to pin a skylink.
 	MaxNumFailedAttempts = 5
 	// maxNumSkylinksToProcess defines the maximum number of skylinks we want to
-	// process in one batch. We need this in order to stay within Mongo's limits
-	// for request size.
+	// process in one batch. We need this in order to stay within MongoDB's
+	// limits for request size.
 	maxNumSkylinksToProcess = 1000
 )
 
@@ -272,13 +272,15 @@ func (db *DB) RemoveServerFromSkylinks(ctx context.Context, skylinks []string, s
 // The MongoDB query is this:
 //
 //	db.getCollection('skylinks').find({
-//	    "pinned": { "$ne": false }},
+//	    "pinned": { "$ne": false },
 //	    "$expr": { "$lt": [{ "$size": "$servers" }, 2 ]},
 //	    "servers": { "$nin": [ "ro-tex.siasky.ivo.NOPE" ]},
+//		"skylink": {"$nin": [ skipSkylinks ]},
 //	    "$or": [
 //	        { "lock_expires" : { "$exists": false }},
 //	        { "lock_expires" : { "$lt": new Date() }}
-//	    ]
+//	    ],
+//		"failed_attempts": {"$not": {"$gt": MaxNumFailedAttempts}},
 //	})
 func (db *DB) FindAndLockUnderpinned(ctx context.Context, server string, skipSkylinks []string, minPinners int) (skymodules.Skylink, error) {
 	if skipSkylinks == nil {

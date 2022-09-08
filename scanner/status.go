@@ -11,14 +11,12 @@ type (
 	// Status represents the status of a sweep.
 	// All times are UTC-based in order to simplify handling and comparison.
 	Status struct {
-		InProgress bool
-		Error      error
-		StartTime  time.Time
-		EndTime    time.Time
-		NumPinned  int
-		NumFailed  int
-
-		failed []string
+		InProgress bool      `json:"inProgress"`
+		StartTime  time.Time `json:"startTime"`
+		EndTime    time.Time `json:"endTime"`
+		NumPinned  int       `json:"numPinned"`
+		NumFailed  int       `json:"numFailed"`
+		Failed     []string  `json:"failed,omitempty"`
 	}
 	// status is the internal status type that allows thread-safe updates.
 	status struct {
@@ -32,19 +30,21 @@ type (
 // If there is a process in progress then Start returns without any action.
 func (st *status) Start() {
 	st.mu.Lock()
-	// Double-check for parallel sweeps.
+	// Double-check for parallel scans.
 	if st.status.InProgress {
 		st.mu.Unlock()
-		st.staticLogger.Debug("Attempted to start a sweep while another one was already ongoing.")
+		st.staticLogger.Debug("Attempted to start a scan while another one was already ongoing.")
 		return
 	}
-	// Initialise the status to "a sweep is running".
+	// Initialise the status to "a scan is running".
 	st.status.InProgress = true
-	st.status.Error = nil
 	st.status.StartTime = lib.Now()
 	st.status.EndTime = time.Time{}
+	st.status.NumPinned = 0
+	st.status.NumFailed = 0
+	st.status.Failed = make([]string, 0)
 	st.mu.Unlock()
-	st.staticLogger.Info("Started a sweep.")
+	st.staticLogger.Info("Started a scan.")
 }
 
 // Status returns a copy of the current status.
@@ -66,20 +66,12 @@ func (st *status) MarkSuccess() {
 func (st *status) MarkFailure(s string) {
 	st.mu.Lock()
 	st.status.NumFailed++
-	st.status.failed = append(st.status.failed, s)
+	st.status.Failed = append(st.status.Failed, s)
 	st.mu.Unlock()
 }
 
-// Failed returns a list of all failed
-func (st *status) Failed() []string {
-	st.mu.Lock()
-	failed := st.status.failed
-	st.mu.Unlock()
-	return failed
-}
-
-// Finalize marks a run as completed with the given error.
-func (st *status) Finalize(err error) {
+// Finish marks a run as completed.
+func (st *status) Finish() {
 	st.mu.Lock()
 	if !st.status.InProgress {
 		st.mu.Unlock()
@@ -87,10 +79,6 @@ func (st *status) Finalize(err error) {
 	}
 	st.status.InProgress = false
 	st.status.EndTime = lib.Now()
-	st.status.NumPinned = 0
-	st.status.NumFailed = 0
-	st.status.failed = make([]string, 0)
-	st.status.Error = err
 	st.mu.Unlock()
-	st.staticLogger.Info("Finalized a sweep.")
+	st.staticLogger.Info("Finalized a scan.")
 }

@@ -3,16 +3,16 @@ package scanner
 import (
 	"context"
 	"encoding/hex"
-	"github.com/skynetlabs/pinner/lib"
-	"gitlab.com/NebulousLabs/fastrand"
 	"testing"
 	"time"
 
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/lib"
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/test"
 	"gitlab.com/NebulousLabs/errors"
+	"gitlab.com/NebulousLabs/fastrand"
 	"gitlab.com/SkynetLabs/skyd/build"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
 	"go.sia.tech/siad/modules"

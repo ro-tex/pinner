@@ -9,9 +9,9 @@ import (
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
 	"github.com/skynetlabs/pinner/logger"
+	"github.com/skynetlabs/pinner/scanner"
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/sweeper"
-	"github.com/skynetlabs/pinner/scanner"
 	"gitlab.com/NebulousLabs/errors"
 )
 

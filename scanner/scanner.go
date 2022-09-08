@@ -3,7 +3,6 @@ package scanner
 import (
 	"context"
 	"fmt"
-	"github.com/skynetlabs/pinner/lib"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/lib"
 	"github.com/skynetlabs/pinner/logger"
 	"github.com/skynetlabs/pinner/skyd"
 	"gitlab.com/NebulousLabs/errors"
@@ -109,6 +109,7 @@ type (
 		staticServerName        string
 		staticSkydClient        skyd.Client
 		staticSleepBetweenScans time.Duration
+		staticStatus            *status
 		staticTG                *threadgroup.ThreadGroup
 
 		// Stats variables:
@@ -130,6 +131,12 @@ func NewScanner(db *database.DB, logger logger.Logger, minPinners int, threads i
 	if sleep == 0 {
 		sleep = sleepBetweenScans
 	}
+	st := &status{
+		staticLogger: logger,
+		status: Status{
+			StartTime: lib.Now(),
+		},
+	}
 	return &Scanner{
 		staticDB:                db,
 		staticLogger:            logger,
@@ -137,6 +144,7 @@ func NewScanner(db *database.DB, logger logger.Logger, minPinners int, threads i
 		staticServerName:        serverName,
 		staticSkydClient:        skydClient,
 		staticSleepBetweenScans: sleep,
+		staticStatus:            st,
 		staticTG:                &threadgroup.ThreadGroup{},
 
 		minPinners: minPinners,
@@ -170,6 +178,11 @@ func (s *Scanner) Start() error {
 	go s.threadedScanAndPin()
 
 	return nil
+}
+
+// Status returns the status of the current scan.
+func (s *Scanner) Status() Status {
+	return s.Status()
 }
 
 // threadedScanAndPin defines the scanning operation of Scanner.
@@ -251,6 +264,8 @@ func (s *Scanner) threadedScanAndPin() {
 		}
 		go s.threadedPrintStats(statsCh)
 
+		s.staticStatus.Start()
+
 		// Start N threads that will scan for underpinned skylinks and repin
 		// them. It's possible that at first all of those start pinning skylinks
 		// without properly respecting the MaxRepairingSkylinks limit. That's
@@ -265,6 +280,7 @@ func (s *Scanner) threadedScanAndPin() {
 		}
 		wg.Wait()
 		close(statsCh)
+		s.staticStatus.Finish()
 		s.staticLogger.Tracef("End scanning")
 
 		// Schedule the next scan, unless already scheduled:
