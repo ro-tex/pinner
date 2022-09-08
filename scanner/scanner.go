@@ -14,7 +14,6 @@ import (
 	"github.com/skynetlabs/pinner/logger"
 	"github.com/skynetlabs/pinner/skyd"
 	"gitlab.com/NebulousLabs/errors"
-	"gitlab.com/NebulousLabs/fastrand"
 	"gitlab.com/NebulousLabs/threadgroup"
 	"gitlab.com/SkynetLabs/skyd/build"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
@@ -92,9 +91,6 @@ var (
 		Dev:      2 * conf.SleepBetweenChecksForScan,
 		Testing:  2 * conf.SleepBetweenChecksForScan,
 	}).(time.Duration)
-	// sleepVariationFactor defines how much the sleep between scans will
-	// vary between executions. It represents percent.
-	sleepVariationFactor = 0.1
 )
 
 type (
@@ -125,8 +121,8 @@ type (
 	}
 )
 
-// NewScanner creates a new Scanner instance.
-func NewScanner(db *database.DB, logger logger.Logger, minPinners int, threads int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
+// New creates a new Scanner instance.
+func New(db *database.DB, logger logger.Logger, minPinners int, threads int, serverName string, customSleepBetweenScans time.Duration, skydClient skyd.Client) *Scanner {
 	sleep := customSleepBetweenScans
 	if sleep == 0 {
 		sleep = sleepBetweenScans
@@ -154,17 +150,6 @@ func NewScanner(db *database.DB, logger logger.Logger, minPinners int, threads i
 // Close stops the background worker thread.
 func (s *Scanner) Close() error {
 	return s.staticTG.Stop()
-}
-
-// SleepBetweenScans defines how often we'll scan the DB for underpinned
-// skylinks. The returned value varies by +/-sleepVariationFactor and it's
-// centered on sleepBetweenScans.
-func (s *Scanner) SleepBetweenScans() time.Duration {
-	variation := int(float64(s.staticSleepBetweenScans) * sleepVariationFactor)
-	upper := int(s.staticSleepBetweenScans) + variation
-	lower := int(s.staticSleepBetweenScans) - variation
-	rng := upper - lower
-	return time.Duration(fastrand.Intn(rng) + lower)
 }
 
 // Start launches the background worker thread that scans the DB for underpinned
@@ -361,7 +346,7 @@ func (s *Scanner) staticScheduleNextScan() bool {
 		// Schedule the next scan time if the scheduled time is in the past.
 		if t.Before(lib.Now()) {
 			// Set the next scan to be after sleepBetweenScans.
-			err = conf.SetNextScan(context.Background(), s.staticDB, lib.Now().Add(sleepBetweenScans))
+			err = conf.SetNextScan(context.Background(), s.staticDB, lib.Now().Add(s.staticSleepBetweenScans))
 			if err != nil {
 				// Log the error and sleep for half an hour. Meanwhile, another
 				// server will finish its scan and will set the next scan time.
