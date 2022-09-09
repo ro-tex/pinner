@@ -3,18 +3,19 @@ package scanner_test
 import (
 	"context"
 	"encoding/hex"
-	"github.com/skynetlabs/pinner/scanner"
 	"testing"
 	"time"
 
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
 	"github.com/skynetlabs/pinner/lib"
+	"github.com/skynetlabs/pinner/scanner"
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/test"
 	"gitlab.com/NebulousLabs/errors"
 	"gitlab.com/NebulousLabs/fastrand"
 	"gitlab.com/SkynetLabs/skyd/build"
+	"gitlab.com/SkynetLabs/skyd/node/api"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
 	"go.sia.tech/siad/modules"
 )
@@ -514,6 +515,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 // - always eligible if below the hard limit
 // - always eligible if last
 // - eligible if in the last X%
+// - not eligible if repair data is above threshold
 func TestEligibleToPin(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -544,7 +546,7 @@ func TestEligibleToPin(t *testing.T) {
 	// Check eligibility for a server that's not in the database.
 	// Expect the error to be handled internally by the method and the missing
 	// value to be set. Expect no error to be returned.
-	_, err = s.ManagedEligibleToPin(ctx)
+	_, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +557,7 @@ func TestEligibleToPin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err := s.ManagedEligibleToPin(ctx)
+	eligible, err := s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +570,7 @@ func TestEligibleToPin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err = s.ManagedEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,7 +582,7 @@ func TestEligibleToPin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err = s.ManagedEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,12 +595,28 @@ func TestEligibleToPin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err = s.ManagedEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !eligible {
 		t.Fatal("Expected to be eligible, wasn't.")
+	}
+	// Set the amount of repair data to be above the pinning threshold.
+	rdrt := skyd.RDReturnType{
+		RD: api.RenterDirectory{
+			Directories: []skymodules.DirectoryInfo{
+				{AggregateRepairSize: scanner.RepairDataPinningThreshold + 1},
+			},
+		},
+	}
+	skydcm.SetMapping(skymodules.RootSiaPath(), rdrt)
+	eligible, err = s.StaticEligibleToPin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eligible {
+		t.Fatal("Expected not to be eligible, was.")
 	}
 }
 

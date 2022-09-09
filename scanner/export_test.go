@@ -30,12 +30,6 @@ var (
 	SleepBetweenScans = sleepBetweenScans
 )
 
-// ManagedEligibleToPin is a helper method that exports managedEligibleToPin
-// for testing purposes and only in testing context.
-func (s *Scanner) ManagedEligibleToPin(ctx context.Context) (bool, error) {
-	return s.managedEligibleToPin(ctx)
-}
-
 // ManagedFindAndPinOneUnderpinnedSkylink is a helper method that exports
 // managedFindAndPinOneUnderpinnedSkylink for testing purposes and only in
 // testing context.
@@ -43,7 +37,13 @@ func (s *Scanner) ManagedFindAndPinOneUnderpinnedSkylink() (skylink skymodules.S
 	return s.managedFindAndPinOneUnderpinnedSkylink()
 }
 
-// ManagedEligibleToPin is a helper method that exports managedEligibleToPin
+// StaticEligibleToPin is a helper method that exports staticEligibleToPin
+// for testing purposes and only in testing context.
+func (s *Scanner) StaticEligibleToPin(ctx context.Context) (bool, error) {
+	return s.staticEligibleToPin(ctx)
+}
+
+// StaticEligibleToPin is a helper method that exports staticEligibleToPin
 // for testing purposes and only in testing context.
 func (s *Scanner) StaticEstimateTimeToFull(sl skymodules.Skylink) time.Duration {
 	return s.staticEstimateTimeToFull(sl)
