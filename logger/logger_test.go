@@ -45,3 +45,29 @@ func TestNewLogger(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestNormalizeLogFileName tests normalizeLogFileName
+func TestNormalizeLogFileName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		out  string
+		err  error
+	}{
+		{name: "simple", in: "pinner.log", out: "/logs/pinner.log", err: nil},
+		{name: "with dir with slash", in: "/mylogs/pinner.log", out: "/logs/mylogs/pinner.log", err: nil},
+		{name: "with dir no slash", in: "mylogs/pinner.log", out: "/logs/mylogs/pinner.log", err: nil},
+		{name: "with leading space", in: " pinner.log", out: "/logs/ pinner.log", err: nil},
+		{name: "with traversal", in: "../pinner.log", out: "", err: errInvalidLogFileName},
+	}
+
+	for _, tt := range tests {
+		out, err := normalizeLogFileName(tt.in)
+		if err != tt.err {
+			t.Errorf("Expected error '%v', got '%v'", tt.err, err)
+		}
+		if out != tt.out {
+			t.Errorf("Expected '%v', got '%v'", tt.out, out)
+		}
+	}
+}
