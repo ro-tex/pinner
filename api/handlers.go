@@ -266,7 +266,12 @@ func (api *API) sweepStatusGET(w http.ResponseWriter, _ *http.Request, _ httprou
 
 // scannerStatusGET responds with the status of the latest scan.
 func (api *API) scannerStatusGET(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	verbose, _ := strconv.ParseBool(r.FormValue("verbose"))
+	vStr := r.FormValue("verbose")
+	verbose, err := strconv.ParseBool(vStr)
+	if err != nil && vStr != "" {
+		api.WriteError(w, errors.AddContext(err, "invalid 'verbose' value"), http.StatusBadRequest)
+		return
+	}
 	st := api.staticScanner.Status()
 	if !verbose {
 		// Do not list all failed skylinks.
