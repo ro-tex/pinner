@@ -1,21 +1,24 @@
 package logger
 
 import (
+	"gitlab.com/SkynetLabs/skyd/build"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sirupsen/logrus"
 	"gitlab.com/NebulousLabs/errors"
 )
 
-const (
-	// logFileDir defines the directory where all logs are stored.
-	logFileDir = "/logs"
-)
-
 var (
 	errInvalidLogFileName = errors.New("invalid log file name")
+	// logFileDir defines the directory where all logs are stored.
+	logFileDir = build.Select(build.Var{
+		Standard: "/logs",
+		Dev:      "./logs",
+		Testing:  "./logs",
+	}).(string)
 )
 
 type (
@@ -55,6 +58,10 @@ func New(level logrus.Level, logfile string) (logger *SkyLogger, err error) {
 		normalizedLogfile, err := normalizeLogFileName(logfile)
 		if err != nil {
 			return nil, err
+		}
+		err = os.MkdirAll(filepath.Dir(normalizedLogfile), 0755)
+		if err != nil {
+			return nil, errors.AddContext(err, "failed to create path to log file")
 		}
 		logger.logFile, err = os.OpenFile(normalizedLogfile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
 		if err != nil {

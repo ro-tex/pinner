@@ -39,7 +39,7 @@ func main() {
 	// Initialised the database connection.
 	db, err := database.New(ctx, cfg.DBCredentials, logger)
 	if err != nil {
-		log.Fatal(errors.AddContext(err, database.ErrCtxFailedToConnect))
+		logger.Fatal(errors.AddContext(err, database.ErrCtxFailedToConnect))
 	}
 
 	// Start the background scanner.
@@ -47,7 +47,7 @@ func main() {
 	scanner := scanner.New(db, logger, cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydClient)
 	err = scanner.Start()
 	if err != nil {
-		log.Fatal(errors.AddContext(err, "failed to start Scanner"))
+		logger.Fatal(errors.AddContext(err, "failed to start Scanner"))
 	}
 	swpr := sweeper.New(db, skydClient, cfg.ServerName, logger)
 	// Schedule a regular sweep..
@@ -56,11 +56,11 @@ func main() {
 	// Initialise the server.
 	server, err := api.New(cfg.ServerName, db, logger, skydClient, scanner, swpr)
 	if err != nil {
-		log.Fatal(errors.AddContext(err, "failed to build the api"))
+		logger.Fatal(errors.AddContext(err, "failed to build the api"))
 	}
 
 	logger.Print("Starting Pinner service")
 	logger.Printf("GitRevision: %v (built %v)", build.GitRevision, build.BuildTime)
 	err = server.ListenAndServe(4000)
-	log.Fatal(errors.Compose(err, scanner.Close()))
+	logger.Fatal(errors.Compose(err, scanner.Close()))
 }
