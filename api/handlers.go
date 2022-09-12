@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/skynetlabs/pinner/conf"
@@ -67,7 +68,7 @@ func (api *API) healthGET(w http.ResponseWriter, req *http.Request, _ httprouter
 	defer func() {
 		b, err := json.Marshal(extHealth)
 		if err != nil {
-			api.staticLogger.Warnf("Failed to serialize extended health information. Error: %v", err)
+			api.staticLogger.Warnf("failed to serialize extended health information. Error: %v", err)
 		}
 		api.staticLogger.Info(string(b))
 	}()
@@ -261,6 +262,17 @@ func (api *API) sweepPOST(w http.ResponseWriter, _ *http.Request, _ httprouter.P
 // sweepStatusGET responds with the status of the latest sweep.
 func (api *API) sweepStatusGET(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	api.WriteJSON(w, api.staticSweeper.Status())
+}
+
+// scannerStatusGET responds with the status of the latest scan.
+func (api *API) scannerStatusGET(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	verbose, _ := strconv.ParseBool(r.FormValue("verbose"))
+	st := api.staticScanner.Status()
+	if !verbose {
+		// Do not list all failed skylinks.
+		st.Failed = nil
+	}
+	api.WriteJSON(w, st)
 }
 
 // parseAndResolve parses the given string representation of a skylink and

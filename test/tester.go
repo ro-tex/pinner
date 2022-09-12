@@ -4,19 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/sirupsen/logrus"
-	"github.com/skynetlabs/pinner/api"
-	"github.com/skynetlabs/pinner/database"
-	"github.com/skynetlabs/pinner/logger"
-	"github.com/skynetlabs/pinner/skyd"
-	"github.com/skynetlabs/pinner/sweeper"
-	"gitlab.com/NebulousLabs/errors"
-	"gitlab.com/SkynetLabs/skyd/build"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/skynetlabs/pinner/api"
+	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/logger"
+	"github.com/skynetlabs/pinner/scanner"
+	"github.com/skynetlabs/pinner/skyd"
+	"github.com/skynetlabs/pinner/sweeper"
+	"gitlab.com/NebulousLabs/errors"
+	"gitlab.com/SkynetLabs/skyd/build"
 )
 
 var (
@@ -49,10 +51,10 @@ func NewDatabase(ctx context.Context, dbName string) (*database.DB, error) {
 	return database.NewCustomDB(ctx, SanitizeName(dbName), DBTestCredentials(), NewDiscardLogger())
 }
 
-// NewDiscardLogger returns a new logger that sends all output to ioutil.Discard.
+// NewDiscardLogger returns a new logger that sends all output to io.Discard.
 func NewDiscardLogger() *logrus.Logger {
 	logger := logrus.New()
-	logger.Out = ioutil.Discard
+	logger.Out = io.Discard
 	return logger
 }
 
@@ -79,7 +81,7 @@ func NewTester(dbName string) (*Tester, error) {
 	skydClientMock := skyd.NewSkydClientMock()
 	swpr := sweeper.New(db, skydClientMock, cfg.ServerName, logger)
 	// The server API encapsulates all the modules together.
-	server, err := api.New(cfg.ServerName, db, logger, skydClientMock, swpr)
+	server, err := api.New(cfg.ServerName, db, logger, skydClientMock, &scanner.Scanner{}, swpr)
 	if err != nil {
 		cancel()
 		return nil, errors.AddContext(err, "failed to build the API")
@@ -319,7 +321,7 @@ func (t *Tester) post(endpoint string, params url.Values, bodyParams url.Values)
 //
 // NOTE: The Body of the returned response is already read and closed.
 func processResponse(r *http.Response) (*http.Response, []byte, error) {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	_ = r.Body.Close()
 	// For convenience, whenever we have a non-OK status we'll wrap it in an
 	// error.

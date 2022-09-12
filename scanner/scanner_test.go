@@ -1,26 +1,27 @@
-package workers
+package scanner_test
 
 import (
 	"context"
 	"encoding/hex"
-	"github.com/skynetlabs/pinner/lib"
-	"gitlab.com/NebulousLabs/fastrand"
-	"gitlab.com/SkynetLabs/skyd/node/api"
 	"testing"
 	"time"
 
 	"github.com/skynetlabs/pinner/conf"
 	"github.com/skynetlabs/pinner/database"
+	"github.com/skynetlabs/pinner/lib"
+	"github.com/skynetlabs/pinner/scanner"
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/test"
 	"gitlab.com/NebulousLabs/errors"
+	"gitlab.com/NebulousLabs/fastrand"
 	"gitlab.com/SkynetLabs/skyd/build"
+	"gitlab.com/SkynetLabs/skyd/node/api"
 	"gitlab.com/SkynetLabs/skyd/skymodules"
 	"go.sia.tech/siad/modules"
 )
 
 const (
-	// cyclesToWait establishes a common number of sleepBetweenScans cycles we
+	// cyclesToWait establishes a common number of scanner.sleepBetweenScans cycles we
 	// should wait until we consider that a file has been or hasn't been picked
 	// by the scanner.
 	cyclesToWait = 3
@@ -57,7 +58,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 	skydcm := skyd.NewSkydClientMock()
 	serverName := t.Name()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, serverName, cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, serverName, cfg.SleepBetweenScans, skydcm)
 	err = s.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +79,7 @@ func TestScannerDryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Sleep for a while, giving a chance to the scanner to pick the skylink up.
-	time.Sleep(cyclesToWait * s.SleepBetweenScans())
+	time.Sleep(cyclesToWait * scanner.SleepBetweenScans)
 	// Make sure the skylink isn't pinned on the local (mock) skyd.
 	if skydcm.IsPinning(sl.String()) {
 		t.Fatal("We didn't expect skyd to be pinning this.")
@@ -90,7 +91,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 
 	// Wait - the skylink should not be picked up and pinned on the local skyd.
-	time.Sleep(cyclesToWait * s.SleepBetweenScans())
+	time.Sleep(cyclesToWait * scanner.SleepBetweenScans)
 
 	// Verify skyd doesn't have the pin.
 	//
@@ -106,7 +107,7 @@ func TestScannerDryRun(t *testing.T) {
 	}
 
 	// Wait for the skylink should be picked up and pinned on the local skyd.
-	err = build.Retry(cyclesToWait, s.SleepBetweenScans(), func() error {
+	err = build.Retry(cyclesToWait, scanner.SleepBetweenScans, func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl.String()) {
 			return errors.New("we expected skyd to be pinning this")
@@ -148,17 +149,14 @@ func TestScanner_calculateSleep(t *testing.T) {
 	}
 
 	skydMock := skyd.NewSkydClientMock()
-	s := Scanner{
-		staticSkydClient: skydMock,
-	}
+	s := scanner.New(nil, test.NewDiscardLogger(), 1, 1, t.Name(), scanner.SleepBetweenScans, skydMock)
 	skylink := test.RandomSkylink()
 
 	for tname, tt := range tests {
 		// Prepare the mock.
 		meta := skymodules.SkyfileMetadata{Length: tt.dataSize}
 		skydMock.SetMetadata(skylink.String(), meta, nil)
-
-		sleep := s.staticEstimateTimeToFull(skylink)
+		sleep := s.StaticEstimateTimeToFull(skylink)
 		if sleep != tt.expectedSleep {
 			t.Errorf("%s: expected %ds, got %ds", tname, tt.expectedSleep/time.Second, sleep/time.Second)
 		}
@@ -207,7 +205,7 @@ func curryTest(fn func(t *testing.T, db *database.DB, cfg conf.Config, skydcm *s
 
 // testBase ensures that Scanner works as expected in the general case.
 func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 	err := s.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -229,7 +227,7 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 	}
 
 	// Sleep for a while, giving a chance to the scanner to pick the skylink up.
-	time.Sleep(cyclesToWait * s.SleepBetweenScans())
+	time.Sleep(cyclesToWait * scanner.SleepBetweenScans)
 	// Make sure the skylink isn't pinned on the local (mock) skyd.
 	if skydcm.IsPinning(sl.String()) {
 		t.Fatal("We didn't expect skyd to be pinning this.")
@@ -241,7 +239,7 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 	}
 
 	// Wait for the skylink should be picked up and pinned on the local skyd.
-	err = build.Retry(cyclesToWait, s.SleepBetweenScans(), func() error {
+	err = build.Retry(cyclesToWait, scanner.SleepBetweenScans, func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl.String()) {
 			return errors.New("we expected skyd to be pinning this")
@@ -256,9 +254,9 @@ func testBase(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.Clien
 // testSleepForOrUntilStopped ensures that staticSleepForOrUntilStopped
 // functions properly.
 func testSleepForOrUntilStopped(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 	// Sleep for 10ms, expect false.
-	stopped := s.staticSleepForOrUntilStopped(10 * time.Millisecond)
+	stopped := s.StaticSleepForOrUntilStopped(10 * time.Millisecond)
 	if stopped {
 		t.Fatal("Unexpected.")
 	}
@@ -269,7 +267,7 @@ func testSleepForOrUntilStopped(t *testing.T, db *database.DB, cfg conf.Config, 
 	}()
 	// Sleep for 100ms, expect to be stopped in 10ms.
 	t0 := lib.Now()
-	stopped = s.staticSleepForOrUntilStopped(100 * time.Millisecond)
+	stopped = s.StaticSleepForOrUntilStopped(100 * time.Millisecond)
 	if !stopped {
 		t.Fatal("Unexpected")
 	}
@@ -282,11 +280,11 @@ func testSleepForOrUntilStopped(t *testing.T, db *database.DB, cfg conf.Config, 
 // testEstimateTimeToFull ensures that staticEstimateTimeToFull functions
 // correctly.
 func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 
 	chunk := 10 * modules.SectorSizeStandard
-	oneChunkTime := time.Duration((1*chunk*fanoutRedundancy+(baseSectorRedundancy-1)*modules.SectorSize)/assumedUploadSpeedInBytes) * time.Second
-	twoChunkTime := time.Duration((2*chunk*fanoutRedundancy+(baseSectorRedundancy-1)*modules.SectorSize)/assumedUploadSpeedInBytes) * time.Second
+	oneChunkTime := time.Duration((1*chunk*scanner.FanoutRedundancy+(scanner.BaseSectorRedundancy-1)*modules.SectorSize)/scanner.AssumedUploadSpeedInBytes) * time.Second
+	twoChunkTime := time.Duration((2*chunk*scanner.FanoutRedundancy+(scanner.BaseSectorRedundancy-1)*modules.SectorSize)/scanner.AssumedUploadSpeedInBytes) * time.Second
 
 	tests := map[string]struct {
 		size    uint64
@@ -295,7 +293,7 @@ func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skyd
 	}{
 		"error": {
 			err:     errors.New("error while fetching metadata"),
-			expTime: SleepBetweenHealthChecks, // 1ms
+			expTime: scanner.SleepBetweenHealthChecks, // 1ms
 		},
 		"zero": {
 			size:    0,            // defaults to one chunk
@@ -316,7 +314,7 @@ func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skyd
 		// Set the size.
 		skydcm.SetMetadata(sl.String(), skymodules.SkyfileMetadata{Length: tt.size}, tt.err)
 		// Get the time.
-		estTime := s.staticEstimateTimeToFull(sl)
+		estTime := s.StaticEstimateTimeToFull(sl)
 		if estTime != tt.expTime {
 			t.Errorf("Test '%s': expected %s, got %s", name, tt.expTime, estTime)
 		}
@@ -325,7 +323,7 @@ func testEstimateTimeToFull(t *testing.T, db *database.DB, cfg conf.Config, skyd
 
 // testWaitUntilHealthy ensures that staticWaitUntilHealthy functions correctly.
 func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm *skyd.ClientMock) {
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, t.Name(), cfg.SleepBetweenScans, skydcm)
 
 	sl := test.RandomSkylink()
 	sp, err := sl.SiaPath()
@@ -338,7 +336,7 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 	// Wait for the file to become healthy.
 	// Expect this to hit the deadline after 6s.
 	t0 := lib.Now()
-	s.staticWaitUntilHealthy(sl, sp)
+	s.StaticWaitUntilHealthy(sl, sp)
 	t1 := lib.Now()
 	// Expect the time difference to be around 6s. Add 5ms tolerance.
 	if t0.Add(6*time.Second + 5*time.Millisecond).Before(t1) {
@@ -351,7 +349,7 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 		skydcm.SetHealth(sp, 0)
 	}()
 	t0 = lib.Now()
-	s.staticWaitUntilHealthy(sl, sp)
+	s.StaticWaitUntilHealthy(sl, sp)
 	t1 = lib.Now()
 	// Expect the time difference to be around 100ms. Add 50ms tolerance.
 	if t0.Add(150 * time.Millisecond).Before(t1) {
@@ -361,7 +359,7 @@ func testWaitUntilHealthy(t *testing.T, db *database.DB, cfg conf.Config, skydcm
 	// Set the metadata fetch to error out. Expect this to take ~2ms.
 	skydcm.SetMetadata(sl.String(), skymodules.SkyfileMetadata{}, errors.New("metadata error"))
 	t0 = lib.Now()
-	s.staticWaitUntilHealthy(sl, sp)
+	s.StaticWaitUntilHealthy(sl, sp)
 	t1 = lib.Now()
 	// Expect the time difference to be around 2ms. Add 2ms tolerance.
 	if t0.Add(4 * time.Millisecond).Before(t1) {
@@ -389,12 +387,12 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	}
 	skydcm := skyd.NewSkydClientMock()
 	serverName := t.Name()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, serverName, cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, serverName, cfg.SleepBetweenScans, skydcm)
 
 	sl := test.RandomSkylink()
 
 	// Look for underpinned skylinks in the empty DB.
-	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	_, _, _, err = s.ManagedFindAndPinOneUnderpinnedSkylink()
 	if !database.IsNoSkylinksNeedPinning(err) {
 		t.Fatalf("Expected '%v', got '%v'", database.ErrNoUnderpinnedSkylinks, err)
 	}
@@ -412,7 +410,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	if skydcm.IsPinning(sl.String()) {
 		t.Fatal("Expected the skylink to not be pinned, yet.")
 	}
-	sl1, _, _, err := s.managedFindAndPinOneUnderpinnedSkylink()
+	sl1, _, _, err := s.ManagedFindAndPinOneUnderpinnedSkylink()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +437,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	_, _, _, err = s.ManagedFindAndPinOneUnderpinnedSkylink()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +455,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 		t.Fatal(err)
 	}
 	skydcm.SetPinError(skyd.ErrSkylinkIsBlocked)
-	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	_, _, _, err = s.ManagedFindAndPinOneUnderpinnedSkylink()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +479,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	}
 	errUnexpected := errors.New("unexpected error")
 	skydcm.SetPinError(errUnexpected)
-	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	_, _, _, err = s.ManagedFindAndPinOneUnderpinnedSkylink()
 	if !errors.Contains(err, errUnexpected) {
 		t.Fatalf("Expected '%v', got '%v'", errUnexpected, err)
 	}
@@ -507,7 +505,7 @@ func TestFindAndPinOneUnderpinnedSkylink(t *testing.T) {
 	}
 	// Set the pin error to nil, making all pins successful.
 	skydcm.SetPinError(nil)
-	_, _, _, err = s.managedFindAndPinOneUnderpinnedSkylink()
+	_, _, _, err = s.ManagedFindAndPinOneUnderpinnedSkylink()
 	if !errors.Contains(err, database.ErrNoUnderpinnedSkylinks) {
 		t.Fatalf("Expected '%v', got '%v'", errUnexpected, err)
 	}
@@ -535,12 +533,12 @@ func TestEligibleToPin(t *testing.T) {
 		t.Fatal(err)
 	}
 	skydcm := skyd.NewSkydClientMock()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
 
 	// Set the load levels for three other servers. The last one will be empty.
-	err1 := s.staticDB.SetServerLoad(ctx, "server1", 30*int64(AlwaysPinThreshold))
-	err2 := s.staticDB.SetServerLoad(ctx, "server2", 20*int64(AlwaysPinThreshold))
-	err3 := s.staticDB.SetServerLoad(ctx, "server3", 0)
+	err1 := db.SetServerLoad(ctx, "server1", 30*int64(scanner.AlwaysPinThreshold))
+	err2 := db.SetServerLoad(ctx, "server2", 20*int64(scanner.AlwaysPinThreshold))
+	err3 := db.SetServerLoad(ctx, "server3", 0)
 	if err = errors.Compose(err1, err2, err3); err != nil {
 		t.Fatal(err)
 	}
@@ -548,18 +546,18 @@ func TestEligibleToPin(t *testing.T) {
 	// Check eligibility for a server that's not in the database.
 	// Expect the error to be handled internally by the method and the missing
 	// value to be set. Expect no error to be returned.
-	_, err = s.staticEligibleToPin(ctx)
+	_, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Set the server load level to a low level but not last.
 	// Bottom 50% but not bottom 30%. Still, below the hard limit, so we expect
 	// to be eligible.
-	err = s.staticDB.SetServerLoad(ctx, cfg.ServerName, int64(AlwaysPinThreshold)/2)
+	err = db.SetServerLoad(ctx, cfg.ServerName, int64(scanner.AlwaysPinThreshold)/2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err := s.staticEligibleToPin(ctx)
+	eligible, err := s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,11 +566,11 @@ func TestEligibleToPin(t *testing.T) {
 	}
 	// Set the load level above the hard limit and above 30%.
 	// Expect not eligible.
-	err = s.staticDB.SetServerLoad(ctx, cfg.ServerName, 3*int64(AlwaysPinThreshold))
+	err = db.SetServerLoad(ctx, cfg.ServerName, 3*int64(scanner.AlwaysPinThreshold))
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err = s.staticEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,11 +578,11 @@ func TestEligibleToPin(t *testing.T) {
 		t.Fatal("Expected to not be eligible, was.")
 	}
 	// Bump the load level of server3, so out current server is left last.
-	err = s.staticDB.SetServerLoad(ctx, "server3", 5*int64(AlwaysPinThreshold))
+	err = db.SetServerLoad(ctx, "server3", 5*int64(scanner.AlwaysPinThreshold))
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err = s.staticEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,11 +591,11 @@ func TestEligibleToPin(t *testing.T) {
 	}
 	// Add one more server above our server, so we're not last but we're in the
 	// bottom 30%
-	err = s.staticDB.SetServerLoad(ctx, "server4", 6*int64(AlwaysPinThreshold))
+	err = db.SetServerLoad(ctx, "server4", 6*int64(scanner.AlwaysPinThreshold))
 	if err != nil {
 		t.Fatal(err)
 	}
-	eligible, err = s.staticEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,12 +606,12 @@ func TestEligibleToPin(t *testing.T) {
 	rdrt := skyd.RDReturnType{
 		RD: api.RenterDirectory{
 			Directories: []skymodules.DirectoryInfo{
-				{AggregateRepairSize: RepairDataPinningThreshold + 1},
+				{AggregateRepairSize: scanner.RepairDataPinningThreshold + 1},
 			},
 		},
 	}
 	skydcm.SetMapping(skymodules.RootSiaPath(), rdrt)
-	eligible, err = s.staticEligibleToPin(ctx)
+	eligible, err = s.StaticEligibleToPin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,7 +639,7 @@ func TestScannerObeysLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	skydcm := skyd.NewSkydClientMock()
-	s := NewScanner(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
+	s := scanner.New(db, test.NewDiscardLogger(), cfg.MinPinners, cfg.ScannerThreads, cfg.ServerName, cfg.SleepBetweenScans, skydcm)
 	err = s.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -654,7 +652,7 @@ func TestScannerObeysLimit(t *testing.T) {
 
 	// TEST: Eligible, expect to pin.
 	// We have just one server, so we're eligible.
-	err = db.SetServerLoad(ctx, cfg.ServerName, int64(AlwaysPinThreshold)/2)
+	err = db.SetServerLoad(ctx, cfg.ServerName, int64(scanner.AlwaysPinThreshold)/2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,7 +662,7 @@ func TestScannerObeysLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Wait for the scanner to run and make sure we've pinned this skylink.
-	err = build.Retry(cyclesToWait, sleepBetweenScans, func() error {
+	err = build.Retry(cyclesToWait, scanner.SleepBetweenScans, func() error {
 		// Make sure the skylink is pinned on the local (mock) skyd.
 		if !skydcm.IsPinning(sl1.String()) {
 			return errors.New("we expected skyd to be pinning this")
@@ -679,11 +677,11 @@ func TestScannerObeysLimit(t *testing.T) {
 	// Add another server with zero load. Set our load to be above the hard
 	// limit. This will put us in the top 50%, so we should not pin.
 	// Set the load levels for four other servers. The last one will be empty.
-	err = s.staticDB.SetServerLoad(ctx, "server4", 0)
+	err = db.SetServerLoad(ctx, "server4", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = db.SetServerLoad(ctx, cfg.ServerName, 2*int64(AlwaysPinThreshold))
+	err = db.SetServerLoad(ctx, cfg.ServerName, 2*int64(scanner.AlwaysPinThreshold))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -694,7 +692,7 @@ func TestScannerObeysLimit(t *testing.T) {
 	}
 	// Wait for the scanner to run and make sure we are not pinning this skylink.
 	expErr := errors.New("expected error")
-	err = build.Retry(cyclesToWait, sleepBetweenScans, func() error {
+	err = build.Retry(cyclesToWait, scanner.SleepBetweenScans, func() error {
 		if !skydcm.IsPinning(sl2.String()) {
 			return expErr
 		}

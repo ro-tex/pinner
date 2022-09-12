@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/skynetlabs/pinner/scanner"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
@@ -21,6 +22,7 @@ type (
 		staticDB         *database.DB
 		staticLogger     logger.Logger
 		staticRouter     *httprouter.Router
+		staticScanner    *scanner.Scanner
 		staticSkydClient skyd.Client
 		staticSweeper    *sweeper.Sweeper
 	}
@@ -32,7 +34,7 @@ type (
 )
 
 // New returns a new initialised API.
-func New(serverName string, db *database.DB, logger logger.Logger, skydClient skyd.Client, sweeper *sweeper.Sweeper) (*API, error) {
+func New(serverName string, db *database.DB, logger logger.Logger, skydClient skyd.Client, scanner *scanner.Scanner, sweeper *sweeper.Sweeper) (*API, error) {
 	if db == nil {
 		return nil, errors.New("no DB provided")
 	}
@@ -47,6 +49,7 @@ func New(serverName string, db *database.DB, logger logger.Logger, skydClient sk
 		staticDB:         db,
 		staticLogger:     logger,
 		staticRouter:     router,
+		staticScanner:    scanner,
 		staticSkydClient: skydClient,
 		staticSweeper:    sweeper,
 	}

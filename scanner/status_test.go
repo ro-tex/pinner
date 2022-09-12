@@ -1,9 +1,8 @@
-package sweeper
+package scanner
 
 import (
 	"github.com/sirupsen/logrus"
 	"github.com/skynetlabs/pinner/lib"
-	"gitlab.com/NebulousLabs/errors"
 	"io"
 	"testing"
 	"time"
@@ -15,12 +14,11 @@ func TestStatus(t *testing.T) {
 	logger.Out = io.Discard
 
 	s := &status{staticLogger: logger}
-	sentinelErr := errors.New("this should not get set")
 
 	// isEmpty is a helper that returns true when the given status has its zero
 	// value.
 	isEmpty := func(st Status) bool {
-		return !(st.InProgress || st.Error != nil || (st.EndTime != time.Time{}) || (st.StartTime != time.Time{}))
+		return !(st.InProgress || (st.EndTime != time.Time{}) || (st.StartTime != time.Time{}))
 	}
 
 	// Check the status, expect not in progress.
@@ -28,8 +26,8 @@ func TestStatus(t *testing.T) {
 	if !isEmpty(st) {
 		t.Fatalf("Status not empty: %+v", st)
 	}
-	// Try to finalize before starting, expect nothing to happen.
-	s.Finalize(sentinelErr)
+	// Try to finish before starting, expect nothing to happen.
+	s.Finish()
 	st = s.Status()
 	if !isEmpty(st) {
 		t.Fatalf("Status not empty: %+v", st)
@@ -48,23 +46,23 @@ func TestStatus(t *testing.T) {
 	if st.StartTime != startTime {
 		t.Fatalf("Expected start time '%s', got '%s'", startTime, st.StartTime)
 	}
-	// Finalize and verify.
-	s.Finalize(sentinelErr)
+	// Finish and verify.
+	s.Finish()
 	st = s.Status()
-	if st.InProgress || !errors.Contains(st.Error, sentinelErr) || (st.EndTime == time.Time{}) {
+	if st.InProgress || (st.EndTime == time.Time{}) {
 		t.Fatalf("Unexpected status: %+v", st)
 	}
 	// Save end time and verify that finalising again has no effect.
 	endTime := st.EndTime
-	s.Finalize(nil)
+	s.Finish()
 	st = s.Status()
-	if st.EndTime != endTime || !errors.Contains(st.Error, sentinelErr) {
+	if st.EndTime != endTime {
 		t.Fatalf("Unexpected status: %+v", st)
 	}
 	// Start the same status again.
 	s.Start()
 	st = s.Status()
-	if !st.InProgress || st.Error != nil {
+	if !st.InProgress {
 		t.Fatalf("Unexpected status: %+v", st)
 	}
 }
