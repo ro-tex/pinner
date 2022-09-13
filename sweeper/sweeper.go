@@ -3,6 +3,7 @@ package sweeper
 import (
 	"context"
 	"github.com/skynetlabs/pinner/lib"
+	"go.mongodb.org/mongo-driver/mongo"
 	"time"
 
 	"github.com/skynetlabs/pinner/database"
@@ -94,6 +95,10 @@ func (s *Sweeper) threadedPerformSweep() {
 
 	// Get pinned skylinks from the DB
 	dbSkylinks, err := s.staticDB.SkylinksForServer(dbCtx, s.staticServerName)
+	if errors.Contains(err, mongo.ErrNoDocuments) {
+		dbSkylinks = make([]string, 0)
+		err = nil
+	}
 	if err != nil {
 		err = errors.AddContext(err, "failed to fetch skylinks for server")
 		return
