@@ -17,7 +17,7 @@ var (
 	logFileDir = build.Select(build.Var{
 		Standard: "/logs",
 		Dev:      "./logs",
-		Testing:  "./logs",
+		Testing:  "",
 	}).(string)
 )
 
@@ -85,6 +85,10 @@ func (l *SkyLogger) Close() error {
 func normalizeLogFileName(logfile string) (string, error) {
 	if strings.HasPrefix(logfile, "..") {
 		return "", errInvalidLogFileName
+	}
+	logFileDir := logFileDir
+	if build.Release == "testing" {
+		logFileDir = ""
 	}
 	if !strings.HasPrefix(logfile, "/") {
 		return logFileDir + "/" + logfile, nil

@@ -13,6 +13,7 @@ func TestNewLogger(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
+	t.Parallel()
 
 	dir := t.TempDir()
 
@@ -54,10 +55,13 @@ func TestNormalizeLogFileName(t *testing.T) {
 		out  string
 		err  error
 	}{
-		{name: "simple", in: "pinner.log", out: "/logs/pinner.log", err: nil},
-		{name: "with dir with slash", in: "/mylogs/pinner.log", out: "/logs/mylogs/pinner.log", err: nil},
-		{name: "with dir no slash", in: "mylogs/pinner.log", out: "/logs/mylogs/pinner.log", err: nil},
-		{name: "with leading space", in: " pinner.log", out: "/logs/ pinner.log", err: nil},
+		// The resulting paths here don't have the `/logs` prefix because we
+		// override that when testing. All log files created outside of testing
+		// will be prefixed with logFileDir, i.e. `/logs`.
+		{name: "simple", in: "pinner.log", out: "/pinner.log", err: nil},
+		{name: "with dir with slash", in: "/mylogs/pinner.log", out: "/mylogs/pinner.log", err: nil},
+		{name: "with dir no slash", in: "mylogs/pinner.log", out: "/mylogs/pinner.log", err: nil},
+		{name: "with leading space", in: " pinner.log", out: "/ pinner.log", err: nil},
 		{name: "with traversal", in: "../pinner.log", out: "", err: errInvalidLogFileName},
 	}
 
