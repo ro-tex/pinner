@@ -4,6 +4,8 @@ import (
 	"github.com/skynetlabs/pinner/skyd"
 	"github.com/skynetlabs/pinner/sweeper"
 	"github.com/skynetlabs/pinner/test"
+	"gitlab.com/NebulousLabs/errors"
+	"go.mongodb.org/mongo-driver/mongo"
 	"testing"
 	"time"
 )
@@ -27,7 +29,7 @@ func TestSweeper(t *testing.T) {
 
 	// Ensure there are no skylinks pinned by this server, according to the DB.
 	sls, err := db.SkylinksForServer(ctx, serverName)
-	if err != nil {
+	if !errors.Contains(err, mongo.ErrNoDocuments) {
 		t.Fatal(err)
 	}
 	if len(sls) > 0 {
@@ -46,7 +48,7 @@ func TestSweeper(t *testing.T) {
 	// Ensure the sweep passed and there are skylinks in the DB marked as pinned
 	// by this server.
 	sls, err = db.SkylinksForServer(ctx, serverName)
-	if err != nil {
+	if !errors.Contains(err, mongo.ErrNoDocuments) {
 		t.Fatal(err)
 	}
 	// Grab the skylinks available in the mock. We expect to see these in the DB.

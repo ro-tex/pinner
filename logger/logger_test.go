@@ -13,6 +13,7 @@ func TestNewLogger(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
+	t.Parallel()
 
 	dir := t.TempDir()
 
@@ -43,5 +44,34 @@ func TestNewLogger(t *testing.T) {
 	err = f.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestNormalizeLogFileName tests normalizeLogFileName
+func TestNormalizeLogFileName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		out  string
+		err  error
+	}{
+		// The resulting paths here don't have the `/logs` prefix because we
+		// override that when testing. All log files created outside of testing
+		// will be prefixed with logFileDir, i.e. `/logs`.
+		{name: "simple", in: "pinner.log", out: "/pinner.log", err: nil},
+		{name: "with dir with slash", in: "/mylogs/pinner.log", out: "/mylogs/pinner.log", err: nil},
+		{name: "with dir no slash", in: "mylogs/pinner.log", out: "/mylogs/pinner.log", err: nil},
+		{name: "with leading space", in: " pinner.log", out: "/ pinner.log", err: nil},
+		{name: "with traversal", in: "../pinner.log", out: "", err: errInvalidLogFileName},
+	}
+
+	for _, tt := range tests {
+		out, err := normalizeLogFileName(tt.in)
+		if err != tt.err {
+			t.Errorf("Expected error '%v', got '%v'", tt.err, err)
+		}
+		if out != tt.out {
+			t.Errorf("Expected '%v', got '%v'", tt.out, out)
+		}
 	}
 }
